@@ -5,6 +5,13 @@ from sqlalchemy import text
 from app.db.database import engine
 from app.api import auth, patients, appointments
 
+# Import all models so SQLAlchemy can find them
+from app.models.user import User
+from app.models.patient import Patient
+from app.models.healthcare_provider import HealthcareProvider
+from app.models.facility import Facility
+from app.models.appointment import Appointment
+
 # Create FastAPI app
 app = FastAPI(
     title=settings.APP_NAME,
