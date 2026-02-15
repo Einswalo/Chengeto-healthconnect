@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from sqlalchemy import text
 from app.db.database import engine
+from app.api import auth
 
 # Create FastAPI app
 app = FastAPI(
@@ -17,8 +18,11 @@ app.add_middleware(
     allow_origins=settings.ALLOWED_ORIGINS.split(","),
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*"],   
 )
+
+# Include routers
+app.include_router(auth.router)
 
 # Root endpoint
 @app.get("/")
@@ -48,7 +52,7 @@ async def test_database():
             "message": f"Database connection failed: {str(e)}"
         }
     
-    
+
 # Health check endpoint
 @app.get("/health")
 async def health_check():
