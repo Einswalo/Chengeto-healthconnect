@@ -6,6 +6,8 @@ from app.models.appointment import Appointment
 from app.models.medical_record import MedicalRecord
 from app.models.vital_sign import VitalSign
 from app.models.prescription import Prescription
+from app.models.consent_record import ConsentRecord
+from app.models.emergency_access_log import EmergencyAccessLog
 
 __all__ = [
     "User", 
@@ -15,5 +17,7 @@ __all__ = [
     "Appointment",
     "MedicalRecord",
     "VitalSign",
-    "Prescription"
+    "Prescription",
+    "ConsentRecord",
+    "EmergencyAccessLog"
 ]
