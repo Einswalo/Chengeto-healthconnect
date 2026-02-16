@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from sqlalchemy import text
 from app.db.database import engine
-from app.api import auth, patients, appointments, medical_records, vital_signs
+from app.api import auth, patients, appointments, medical_records, vital_signs, prescriptions, facilities, providers
 
 # Import all models so SQLAlchemy can find them
 from app.models.user import User
@@ -13,6 +13,7 @@ from app.models.facility import Facility
 from app.models.appointment import Appointment
 from app.models.medical_record import MedicalRecord
 from app.models.vital_sign import VitalSign
+from app.models.prescription import Prescription
 
 # Create FastAPI app
 app = FastAPI(
@@ -36,6 +37,10 @@ app.include_router(patients.router)
 app.include_router(appointments.router)
 app.include_router(medical_records.router)
 app.include_router(vital_signs.router)
+app.include_router(prescriptions.router)
+app.include_router(facilities.router)
+app.include_router(providers.router)
+
 
 
 # Root endpoint

@@ -5,6 +5,7 @@ from app.models.facility import Facility
 from app.models.appointment import Appointment
 from app.models.medical_record import MedicalRecord
 from app.models.vital_sign import VitalSign
+from app.models.prescription import Prescription
 
 __all__ = [
     "User", 
@@ -13,5 +14,6 @@ __all__ = [
     "Facility", 
     "Appointment",
     "MedicalRecord",
-    "VitalSign"
+    "VitalSign",
+    "Prescription"
 ]

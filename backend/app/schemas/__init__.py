@@ -3,6 +3,9 @@ from app.schemas.patient import PatientCreate, PatientResponse
 from app.schemas.appointment import AppointmentCreate, AppointmentUpdate, AppointmentResponse
 from app.schemas.medical_record import MedicalRecordCreate, MedicalRecordResponse
 from app.schemas.vital_sign import VitalSignCreate, VitalSignResponse
+from app.schemas.prescription import PrescriptionCreate, PrescriptionResponse
+from app.schemas.facility import FacilityCreate, FacilityResponse
+from app.schemas.healthcare_provider import HealthcareProviderCreate, HealthcareProviderResponse
 
 __all__ = [
     "UserRegister",
@@ -18,5 +21,11 @@ __all__ = [
     "MedicalRecordCreate",
     "MedicalRecordResponse",
     "VitalSignCreate",
-    "VitalSignResponse"
+    "VitalSignResponse",
+    "PrescriptionCreate",
+    "PrescriptionResponse",
+    "FacilityCreate",
+    "FacilityResponse",
+    "HealthcareProviderCreate",
+    "HealthcareProviderResponse"
 ]
