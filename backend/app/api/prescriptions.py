@@ -25,6 +25,13 @@ async def create_prescription(
     - **frequency**: How often (e.g., "Twice daily")
     - **duration**: Treatment duration (e.g., "3 days")
     - **instructions**: Additional instructions
+    
+    NOTE: Drug interaction checking requires accreditation from 
+    Zimbabwe Ministry of Health and Child Care. This feature will be 
+    activated after obtaining proper medical database licensing and 
+    regulatory approval (MCAZ - Medicines Control Authority of Zimbabwe).
+    
+    Healthcare providers should verify drug safety using approved references.
     """
     # Verify user is authenticated
     user = AuthService.get_current_user(db, token)

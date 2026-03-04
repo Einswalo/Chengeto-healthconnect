@@ -5,6 +5,7 @@ from app.models.user import User
 from app.schemas.patient import PatientCreate
 from app.schemas.auth import UserRegister
 from app.services.auth_service import AuthService
+from typing import List, Optional
 
 class PatientService:
     
@@ -95,3 +96,50 @@ class PatientService:
         db.refresh(patient)
         
         return patient
+    
+    @staticmethod
+    def search_patients(
+        db: Session,
+        search_query: Optional[str] = None,
+        city: Optional[str] = None,
+        blood_type: Optional[str] = None,
+        gender: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 10
+    ) -> tuple[List[Patient], int]:
+        """
+        Search and filter patients with pagination
+        
+        Returns: (list of patients, total count)
+        """
+        query = db.query(Patient)
+        
+        # Search by name, national ID, or phone
+        if search_query:
+            search_pattern = f"%{search_query}%"
+            query = query.filter(
+                (Patient.first_name.ilike(search_pattern)) |
+                (Patient.last_name.ilike(search_pattern)) |
+                (Patient.national_id.ilike(search_pattern)) |
+                (Patient.phone_number.ilike(search_pattern))
+            )
+        
+        # Filter by city
+        if city:
+            query = query.filter(Patient.city == city)
+        
+        # Filter by blood type
+        if blood_type:
+            query = query.filter(Patient.blood_type == blood_type)
+        
+        # Filter by gender
+        if gender:
+            query = query.filter(Patient.gender == gender)
+        
+        # Get total count before pagination
+        total = query.count()
+        
+        # Apply pagination
+        patients = query.offset(skip).limit(limit).all()
+        
+        return patients, total

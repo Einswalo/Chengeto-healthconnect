@@ -8,8 +8,9 @@ from app.schemas.facility import FacilityCreate, FacilityResponse
 from app.schemas.healthcare_provider import HealthcareProviderCreate, HealthcareProviderResponse
 from app.schemas.consent_record import ConsentRecordCreate, ConsentRecordResponse
 from app.schemas.emergency_access_log import EmergencyAccessLogCreate, EmergencyAccessLogResponse
+from app.schemas.ai_prediction import AIPredictionCreate, AIPredictionResponse
 
-__all__ = [
+___all__ = [
     "UserRegister",
     "UserLogin", 
     "Token",
@@ -33,5 +34,7 @@ __all__ = [
     "ConsentRecordCreate",
     "ConsentRecordResponse",
     "EmergencyAccessLogCreate",
-    "EmergencyAccessLogResponse"
+    "EmergencyAccessLogResponse",
+    "AIPredictionCreate",
+    "AIPredictionResponse"
 ]
