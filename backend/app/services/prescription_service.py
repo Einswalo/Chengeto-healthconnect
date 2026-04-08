@@ -5,24 +5,15 @@ from app.schemas.prescription import PrescriptionCreate
 from datetime import datetime
 from typing import List
 import secrets
+from app.services.blockchain_service import BlockchainService, Block
+from app.models.blockchain import BlockchainBlock
+import json
 
 class PrescriptionService:
     
     @staticmethod
     def create_prescription(db: Session, prescription_data: PrescriptionCreate) -> Prescription:
-        """Create a new prescription"""
-        
-        # Convert string date to date object
-        try:
-            prescription_date = datetime.strptime(prescription_data.prescription_date, "%Y-%m-%d").date()
-        except ValueError as e:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid date format: {str(e)}"
-            )
-        
-        # Generate blockchain token (placeholder - will be replaced with actual blockchain integration)
-        blockchain_token = f"RX-{secrets.token_hex(16)}"
+        """Create a new prescription with blockchain verification"""
         
         # Create prescription
         new_prescription = Prescription(
@@ -34,14 +25,70 @@ class PrescriptionService:
             frequency=prescription_data.frequency,
             duration=prescription_data.duration,
             instructions=prescription_data.instructions,
-            prescription_date=prescription_date,
-            is_dispensed=False,
-            blockchain_token=blockchain_token
+            is_dispensed=False
         )
         
         db.add(new_prescription)
         db.commit()
         db.refresh(new_prescription)
+        
+        # Add to blockchain
+        try:
+            # Get the last block
+            last_block = db.query(BlockchainBlock).order_by(
+                BlockchainBlock.block_index.desc()
+            ).first()
+            
+            if last_block:
+                previous_hash = last_block.block_hash
+                new_index = last_block.block_index + 1
+            else:
+                # Create genesis block
+                genesis = BlockchainService.create_genesis_block()
+                genesis_record = BlockchainBlock(
+                    block_index=genesis.index,
+                    block_hash=genesis.hash,
+                    previous_hash=genesis.previous_hash,
+                    timestamp=genesis.timestamp,
+                    block_type="genesis",
+                    record_id=0,
+                    data=json.dumps(genesis.data)
+                )
+                db.add(genesis_record)
+                db.commit()
+                
+                previous_hash = genesis.hash
+                new_index = 1
+            
+            # Create prescription block
+            prescription_block = BlockchainService.create_prescription_block(
+                new_prescription, previous_hash, new_index
+            )
+            
+            # Generate blockchain token (readable format)
+            new_prescription.blockchain_token = f"RX-{prescription_block.hash[:16].upper()}"
+            new_prescription.blockchain_token = prescription_block.hash
+            
+            # Save block to blockchain
+            blockchain_record = BlockchainBlock(
+                block_index=prescription_block.index,
+                block_hash=prescription_block.hash,
+                previous_hash=prescription_block.previous_hash,
+                timestamp=prescription_block.timestamp,
+                block_type="prescription",
+                record_id=new_prescription.prescription_id,
+                data=json.dumps(prescription_block.data)
+            )
+            
+            db.add(blockchain_record)
+            db.commit()
+            db.refresh(new_prescription)
+            
+        except Exception as e:
+            print(f"Blockchain error: {e}")
+            new_prescription.blockchain_token = f"RX-{secrets.token_hex(16)}"
+            db.commit()
+            db.refresh(new_prescription)
         
         return new_prescription
     

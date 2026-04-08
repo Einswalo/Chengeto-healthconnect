@@ -23,10 +23,12 @@ function Login() {
       localStorage.setItem('token', response.data.access_token);
       localStorage.setItem('email', email);
       
-      // Success! Redirect based on user type
+     // Success! Redirect to dashboard
       alert('Login successful!');
-      console.log('Token:', response.data.access_token);
-      
+      window.location.reload();
+             // This will trigger App.js to show Dashboard
+
+
     } catch (err) {
       setError(err.response?.data?.detail || 'Login failed. Please check your credentials.');
     } finally {
@@ -74,8 +76,8 @@ function Login() {
 
         <div className="login-footer">
           <p>Test Accounts:</p>
-          <p>Doctor: doctor@chengeto.com / password123</p>
-          <p>Patient: john.doe@chengeto.com / password123</p>
+          <p>Doctor: drchim@chengeto.com / password123</p>
+          <p>Patient: hussein@chengeto.com / password123</p>
         </div>
       </div>
     </div>

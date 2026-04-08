@@ -9,6 +9,7 @@ from app.models.prescription import Prescription
 from app.models.consent_record import ConsentRecord
 from app.models.emergency_access_log import EmergencyAccessLog
 from app.models.ai_prediction import AIPrediction
+from app.models.blockchain import BlockchainBlock
 
 __all__ = [
     "User", 
@@ -21,5 +22,6 @@ __all__ = [
     "Prescription",
     "ConsentRecord",
     "EmergencyAccessLog",
-    "AIPrediction"
+    "AIPrediction",
+    "BlockchainBlock"
 ]

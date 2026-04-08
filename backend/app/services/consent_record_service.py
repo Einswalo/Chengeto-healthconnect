@@ -5,12 +5,16 @@ from app.schemas.consent_record import ConsentRecordCreate
 from datetime import datetime
 from typing import List
 import secrets
+from app.services.blockchain_service import BlockchainService, Block
+from app.models.blockchain import BlockchainBlock
+import json
+
 
 class ConsentRecordService:
     
     @staticmethod
     def create_consent(db: Session, consent_data: ConsentRecordCreate) -> ConsentRecord:
-        """Create a new consent record"""
+        """Create a new consent record with blockchain verification"""
         
         # Convert string dates to date objects
         try:
@@ -24,9 +28,6 @@ class ConsentRecordService:
                 detail=f"Invalid date format: {str(e)}"
             )
         
-        # Generate blockchain hash (placeholder)
-        blockchain_hash = f"CONSENT-{secrets.token_hex(16)}"
-        
         # Create consent record
         new_consent = ConsentRecord(
             patient_id=consent_data.patient_id,
@@ -35,13 +36,70 @@ class ConsentRecordService:
             consent_given=consent_data.consent_given,
             consent_type=consent_data.consent_type,
             valid_from=valid_from,
-            valid_until=valid_until,
-            blockchain_hash=blockchain_hash
+            valid_until=valid_until
         )
         
         db.add(new_consent)
         db.commit()
         db.refresh(new_consent)
+        
+        # Add to blockchain
+        try:
+            # Get the last block in the blockchain
+            last_block = db.query(BlockchainBlock).order_by(
+                BlockchainBlock.block_index.desc()
+            ).first()
+            
+            if last_block:
+                previous_hash = last_block.block_hash
+                new_index = last_block.block_index + 1
+            else:
+                # Create genesis block first
+                genesis = BlockchainService.create_genesis_block()
+                genesis_record = BlockchainBlock(
+                    block_index=genesis.index,
+                    block_hash=genesis.hash,
+                    previous_hash=genesis.previous_hash,
+                    timestamp=genesis.timestamp,
+                    block_type="genesis",
+                    record_id=0,
+                    data=json.dumps(genesis.data)
+                )
+                db.add(genesis_record)
+                db.commit()
+                
+                previous_hash = genesis.hash
+                new_index = 1
+            
+            # Create consent block
+            consent_block = BlockchainService.create_consent_block(
+                new_consent, previous_hash, new_index
+            )
+            
+            # Store blockchain hash in consent record
+            new_consent.blockchain_hash = consent_block.hash
+            
+            # Save block to blockchain table
+            blockchain_record = BlockchainBlock(
+                block_index=consent_block.index,
+                block_hash=consent_block.hash,
+                previous_hash=consent_block.previous_hash,
+                timestamp=consent_block.timestamp,
+                block_type="consent",
+                record_id=new_consent.consent_id,
+                data=json.dumps(consent_block.data)
+            )
+            
+            db.add(blockchain_record)
+            db.commit()
+            db.refresh(new_consent)
+            
+        except Exception as e:
+            # If blockchain fails, still keep the consent record
+            print(f"Blockchain error: {e}")
+            new_consent.blockchain_hash = f"BLOCKCHAIN-ERROR-{secrets.token_hex(8)}"
+            db.commit()
+            db.refresh(new_consent)
         
         return new_consent
     
