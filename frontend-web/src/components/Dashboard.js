@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import './Dashboard.css';
 
@@ -7,52 +7,84 @@ function Dashboard() {
   const [patient, setPatient] = useState(null);
   const [predictions, setPredictions] = useState([]);
   const [prescriptions, setPrescriptions] = useState([]);
+  const [blockchainStatus, setBlockchainStatus] = useState(null);
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
 
   const token = localStorage.getItem('token');
   const email = localStorage.getItem('email');
 
-  useEffect(() => {
-    fetchUserData();
-  }, []);
+  const apiBaseUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+  const api = axios.create({ baseURL: apiBaseUrl, timeout: 15000 });
 
-  const fetchUserData = async () => {
+  const fetchUserData = useCallback(async () => {
     try {
+      setError('');
       // Get current user
-      const userResponse = await axios.get(`http://localhost:8000/auth/me?token=${token}`);
+      const userResponse = await api.get(`/auth/me?token=${token}`);
       setUser(userResponse.data);
 
-      // If patient, get patient profile
+      // If patient, load patient-centric data
       if (userResponse.data.user_type === 'patient') {
-        const patientResponse = await axios.get(`http://localhost:8000/patients/me?token=${token}`);
-        setPatient(patientResponse.data);
+        const patientResponse = await api.get(`/patients/me?token=${token}`);
+        const p = patientResponse.data;
+        setPatient(p);
 
         // Get AI predictions
-        const predictionsResponse = await axios.get(
-          `http://localhost:8000/ai/predictions/patient/${patientResponse.data.patient_id}?token=${token}`
-        );
-        setPredictions(predictionsResponse.data);
+        const predictionsResponse = await api.get(`/ai/predictions/patient/${p.patient_id}?token=${token}`);
+        setPredictions(Array.isArray(predictionsResponse.data) ? predictionsResponse.data : []);
 
         // Get prescriptions
-        const prescriptionsResponse = await axios.get(
-          `http://localhost:8000/prescriptions/patient/${patientResponse.data.patient_id}?token=${token}`
-        );
-        setPrescriptions(prescriptionsResponse.data);
+        const prescriptionsResponse = await api.get(`/prescriptions/patient/${p.patient_id}?token=${token}`);
+        setPrescriptions(Array.isArray(prescriptionsResponse.data) ? prescriptionsResponse.data : []);
+      }
+
+      // Load blockchain integrity status (best-effort; any authenticated user)
+      try {
+        const bc = await api.get(`/blockchain/verify?token=${token}`);
+        setBlockchainStatus(bc.data);
+      } catch (_e) {
+        setBlockchainStatus(null);
       }
 
       setLoading(false);
     } catch (error) {
       console.error('Error fetching data:', error);
+      setError('Failed to load dashboard data. Please check that the backend is running and try again.');
       setLoading(false);
     }
-  };
+  }, [api, token]);
+
+  useEffect(() => {
+    fetchUserData();
+  }, [fetchUserData]);
 
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('email');
     window.location.reload();
   };
+
+  const statValue = (value) => (value === null || value === undefined ? '—' : value);
+
+  const pendingPrescriptions = prescriptions.filter(p => !p.is_dispensed).length;
+  const dispensedPrescriptions = prescriptions.filter(p => p.is_dispensed).length;
+
+  const tabs = (() => {
+    const base = [
+      { id: 'overview', label: 'Overview', icon: '📊' },
+      { id: 'predictions', label: 'AI Predictions', icon: '🤖' },
+      { id: 'prescriptions', label: 'Prescriptions', icon: '💊' },
+      { id: 'blockchain', label: 'Blockchain', icon: '🔗' },
+    ];
+
+    if (user?.user_type === 'patient') {
+      base.splice(1, 0, { id: 'profile', label: 'My Profile', icon: '👤' });
+    }
+
+    return base;
+  })();
 
   if (loading) {
     return (
@@ -67,12 +99,27 @@ function Dashboard() {
       {/* Header */}
       <header className="dashboard-header">
         <div className="header-left">
-          <h1>CHENGETO HealthConnect</h1>
-          <p className="user-role">{user?.user_type?.toUpperCase()}</p>
+          <div className="brand">
+            <div className="brand-mark" aria-hidden="true">CH</div>
+            <div className="brand-text">
+              <h1>CHENGETO HealthConnect</h1>
+              <p className="user-role">{user?.user_type?.toUpperCase() || 'USER'}</p>
+            </div>
+          </div>
         </div>
         <div className="header-right">
-          <span className="user-email">{email}</span>
-          <button onClick={handleLogout} className="logout-btn">Logout</button>
+          <div className="header-meta">
+            <div className="meta-item">
+              <div className="meta-label">Signed in</div>
+              <div className="meta-value">{email}</div>
+            </div>
+            <div className="meta-item">
+              <div className="meta-label">API</div>
+              <div className="meta-value">{apiBaseUrl.replace(/^https?:\/\//, '')}</div>
+            </div>
+          </div>
+          <button onClick={fetchUserData} className="ghost-btn" type="button">Refresh</button>
+          <button onClick={handleLogout} className="logout-btn" type="button">Logout</button>
         </div>
       </header>
 
@@ -81,70 +128,183 @@ function Dashboard() {
         {/* Sidebar */}
         <aside className="sidebar">
           <nav>
-            <button 
-              className={activeTab === 'overview' ? 'nav-btn active' : 'nav-btn'}
-              onClick={() => setActiveTab('overview')}
-            >
-              📊 Overview
-            </button>
-            <button 
-              className={activeTab === 'profile' ? 'nav-btn active' : 'nav-btn'}
-              onClick={() => setActiveTab('profile')}
-            >
-              👤 My Profile
-            </button>
-            <button 
-              className={activeTab === 'predictions' ? 'nav-btn active' : 'nav-btn'}
-              onClick={() => setActiveTab('predictions')}
-            >
-              🤖 AI Predictions
-            </button>
-            <button 
-              className={activeTab === 'prescriptions' ? 'nav-btn active' : 'nav-btn'}
-              onClick={() => setActiveTab('prescriptions')}
-            >
-              💊 Prescriptions
-            </button>
+            {tabs.map(t => (
+              <button
+                key={t.id}
+                className={activeTab === t.id ? 'nav-btn active' : 'nav-btn'}
+                onClick={() => setActiveTab(t.id)}
+                type="button"
+              >
+                <span className="nav-icon" aria-hidden="true">{t.icon}</span>
+                <span>{t.label}</span>
+              </button>
+            ))}
           </nav>
+
+          <div className="sidebar-footer">
+            <div className="sidebar-note">
+              <div className="sidebar-note-title">Prototype dashboard</div>
+              <div className="sidebar-note-body">
+                This is a working UI that reads from your FastAPI backend. Add <code>REACT_APP_API_URL</code> if your API isn’t on localhost.
+              </div>
+            </div>
+          </div>
         </aside>
 
         {/* Main Panel */}
         <main className="main-panel">
+          {error && (
+            <div className="banner banner-error" role="alert">
+              <div className="banner-title">Dashboard error</div>
+              <div className="banner-body">{error}</div>
+            </div>
+          )}
+
           {activeTab === 'overview' && (
             <div className="tab-content">
-              <h2>Welcome, {patient?.first_name || user?.email}!</h2>
+              <div className="page-head">
+                <div>
+                  <h2>Dashboard</h2>
+                  <p className="page-subtitle">
+                    Welcome, {patient?.first_name || user?.email || 'User'}.
+                    {' '}
+                    Here’s what’s happening in your health profile and verification layer.
+                  </p>
+                </div>
+                <div className="page-actions">
+                  <button className="primary-btn" onClick={() => setActiveTab('blockchain')} type="button">
+                    Verify integrity
+                  </button>
+                </div>
+              </div>
               
               <div className="stats-grid">
                 <div className="stat-card">
-                  <div className="stat-number">{predictions.length}</div>
+                  <div className="stat-number">{statValue(predictions.length)}</div>
                   <div className="stat-label">AI Predictions</div>
                 </div>
                 <div className="stat-card">
-                  <div className="stat-number">{prescriptions.length}</div>
+                  <div className="stat-number">{statValue(prescriptions.length)}</div>
                   <div className="stat-label">Prescriptions</div>
                 </div>
                 <div className="stat-card">
-                  <div className="stat-number">
-                    {prescriptions.filter(p => !p.is_dispensed).length}
-                  </div>
+                  <div className="stat-number">{statValue(pendingPrescriptions)}</div>
                   <div className="stat-label">Pending</div>
+                </div>
+                <div className="stat-card accent">
+                  <div className="stat-number">{statValue(blockchainStatus?.total_blocks)}</div>
+                  <div className="stat-label">Blockchain Blocks</div>
                 </div>
               </div>
 
-              {predictions.length > 0 && (
-                <div className="recent-section">
-                  <h3>Latest AI Prediction</h3>
-                  <div className="prediction-highlight">
-                    <div className="prediction-disease">{predictions[0].predicted_condition}</div>
-                    <div className="prediction-confidence">
-                      Confidence: {predictions[0].confidence_score}%
-                    </div>
-                    <div className="prediction-date">
-                      {new Date(predictions[0].prediction_date).toLocaleDateString()}
+              <div className="grid-2">
+                <section className="panel">
+                  <div className="panel-head">
+                    <h3>Verification status</h3>
+                    <div className={`pill ${blockchainStatus?.status === 'valid' ? 'pill-ok' : blockchainStatus?.status ? 'pill-warn' : 'pill-neutral'}`}>
+                      {blockchainStatus?.status ? String(blockchainStatus.status).toUpperCase() : 'UNKNOWN'}
                     </div>
                   </div>
-                </div>
-              )}
+                  <div className="panel-body">
+                    <div className="kv">
+                      <div className="kv-item">
+                        <div className="kv-label">Chain valid</div>
+                        <div className="kv-value">{String(!!blockchainStatus?.chain_valid)}</div>
+                      </div>
+                      <div className="kv-item">
+                        <div className="kv-label">Total blocks</div>
+                        <div className="kv-value">{statValue(blockchainStatus?.total_blocks)}</div>
+                      </div>
+                      <div className="kv-item">
+                        <div className="kv-label">Latest block</div>
+                        <div className="kv-value mono">{blockchainStatus?.latest_block ? String(blockchainStatus.latest_block).slice(0, 18) + '…' : '—'}</div>
+                      </div>
+                      <div className="kv-item">
+                        <div className="kv-label">Distribution</div>
+                        <div className="kv-value">
+                          {blockchainStatus?.block_distribution
+                            ? Object.entries(blockchainStatus.block_distribution).map(([k, v]) => `${k}:${v}`).join('  ')
+                            : '—'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="panel">
+                  <div className="panel-head">
+                    <h3>Prescription activity</h3>
+                    <div className="panel-subhead">Pending vs dispensed</div>
+                  </div>
+                  <div className="panel-body">
+                    <div className="mini-bars" role="img" aria-label="Prescription status chart">
+                      <div className="mini-bar">
+                        <div className="mini-bar-label">Pending</div>
+                        <div className="mini-bar-track">
+                          <div className="mini-bar-fill warn" style={{ width: `${prescriptions.length ? (pendingPrescriptions / prescriptions.length) * 100 : 0}%` }} />
+                        </div>
+                        <div className="mini-bar-value">{pendingPrescriptions}</div>
+                      </div>
+                      <div className="mini-bar">
+                        <div className="mini-bar-label">Dispensed</div>
+                        <div className="mini-bar-track">
+                          <div className="mini-bar-fill ok" style={{ width: `${prescriptions.length ? (dispensedPrescriptions / prescriptions.length) * 100 : 0}%` }} />
+                        </div>
+                        <div className="mini-bar-value">{dispensedPrescriptions}</div>
+                      </div>
+                    </div>
+                    <div className="helper">
+                      Tip: for pharmacists, use the <strong>Dispense</strong> action in your API to mark a prescription as completed.
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              <div className="grid-2">
+                <section className="panel">
+                  <div className="panel-head">
+                    <h3>Latest AI prediction</h3>
+                    <div className="panel-subhead">Most recent diagnosis and confidence</div>
+                  </div>
+                  <div className="panel-body">
+                    {predictions.length > 0 ? (
+                      <div className="prediction-highlight">
+                        <div className="prediction-disease">{predictions[0].predicted_condition}</div>
+                        <div className="prediction-confidence">Confidence: {predictions[0].confidence_score}%</div>
+                        <div className="prediction-date">{new Date(predictions[0].prediction_date).toLocaleString()}</div>
+                      </div>
+                    ) : (
+                      <div className="empty-card">No AI predictions yet.</div>
+                    )}
+                  </div>
+                </section>
+
+                <section className="panel">
+                  <div className="panel-head">
+                    <h3>Latest prescription</h3>
+                    <div className="panel-subhead">Most recent medication and status</div>
+                  </div>
+                  <div className="panel-body">
+                    {prescriptions.length > 0 ? (
+                      <div className="rx-highlight">
+                        <div className="rx-name">{prescriptions[0].medication_name}</div>
+                        <div className="rx-meta">
+                          <span className={`status-badge ${prescriptions[0].is_dispensed ? 'dispensed' : 'pending'}`}>
+                            {prescriptions[0].is_dispensed ? 'Dispensed' : 'Pending'}
+                          </span>
+                          <span className="rx-date">{new Date(prescriptions[0].prescription_date).toLocaleDateString()}</span>
+                        </div>
+                        <div className="rx-details">
+                          <div><strong>Dosage:</strong> {prescriptions[0].dosage}</div>
+                          <div><strong>Frequency:</strong> {prescriptions[0].frequency}</div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="empty-card">No prescriptions yet.</div>
+                    )}
+                  </div>
+                </section>
+              </div>
             </div>
           )}
 
@@ -242,6 +402,55 @@ function Dashboard() {
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === 'blockchain' && (
+            <div className="tab-content">
+              <div className="page-head">
+                <div>
+                  <h2>Blockchain Verification</h2>
+                  <p className="page-subtitle">Verify integrity of consent, prescriptions, and emergency access audit trail.</p>
+                </div>
+                <div className="page-actions">
+                  <button className="primary-btn" onClick={fetchUserData} type="button">Re-verify</button>
+                </div>
+              </div>
+
+              <div className="panel">
+                <div className="panel-head">
+                  <h3>Chain status</h3>
+                  <div className={`pill ${blockchainStatus?.status === 'valid' ? 'pill-ok' : blockchainStatus?.status ? 'pill-warn' : 'pill-neutral'}`}>
+                    {blockchainStatus?.status ? String(blockchainStatus.status).toUpperCase() : 'UNKNOWN'}
+                  </div>
+                </div>
+                <div className="panel-body">
+                  {blockchainStatus ? (
+                    <div className="kv">
+                      <div className="kv-item">
+                        <div className="kv-label">Message</div>
+                        <div className="kv-value">{blockchainStatus.message || '—'}</div>
+                      </div>
+                      <div className="kv-item">
+                        <div className="kv-label">Total blocks</div>
+                        <div className="kv-value">{statValue(blockchainStatus.total_blocks)}</div>
+                      </div>
+                      <div className="kv-item">
+                        <div className="kv-label">Genesis</div>
+                        <div className="kv-value mono">{blockchainStatus.genesis_block ? String(blockchainStatus.genesis_block).slice(0, 18) + '…' : '—'}</div>
+                      </div>
+                      <div className="kv-item">
+                        <div className="kv-label">Latest</div>
+                        <div className="kv-value mono">{blockchainStatus.latest_block ? String(blockchainStatus.latest_block).slice(0, 18) + '…' : '—'}</div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="empty-card">
+                      Blockchain status not available. Make sure your backend has the <code>/blockchain/verify</code> route enabled.
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           )}
         </main>
