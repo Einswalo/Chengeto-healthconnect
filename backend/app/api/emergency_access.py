@@ -5,6 +5,7 @@ from app.db.database import get_db
 from app.schemas.emergency_access_log import EmergencyAccessLogCreate, EmergencyAccessLogResponse
 from app.services.emergency_access_log_service import EmergencyAccessLogService
 from app.services.auth_service import AuthService
+from app.core.access_control import require_patient_access
 
 router = APIRouter(prefix="/emergency-access", tags=["Emergency Access"])
 
@@ -71,5 +72,7 @@ async def get_patient_emergency_access_logs(
     Shows complete audit trail of who accessed patient data during emergencies
     """
     user = AuthService.get_current_user(db, token)
+    # Only show emergency logs to the patient themselves, admin, or via consent/emergency
+    require_patient_access(db, user=user, patient_id=patient_id, allow_emergency=True)
     logs = EmergencyAccessLogService.get_patient_emergency_access_logs(db, patient_id)
     return logs

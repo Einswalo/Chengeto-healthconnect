@@ -156,6 +156,14 @@ function Dashboard() {
     fetchUserData();
   }, [fetchUserData]);
 
+  // Default landing page by role
+  useEffect(() => {
+    if (!user?.user_type) return;
+    if (user.user_type === 'patient') setActivePage('dashboard');
+    else setActivePage('patients');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.user_type]);
+
   const handleLogout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('email');

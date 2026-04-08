@@ -5,6 +5,7 @@ from app.db.database import get_db
 from app.schemas.appointment import AppointmentCreate, AppointmentUpdate, AppointmentResponse
 from app.services.appointment_service import AppointmentService
 from app.services.auth_service import AuthService
+from app.core.access_control import require_patient_access
 
 router = APIRouter(prefix="/appointments", tags=["Appointments"])
 
@@ -57,6 +58,7 @@ async def get_patient_appointments(
     Requires: JWT token
     """
     user = AuthService.get_current_user(db, token)
+    require_patient_access(db, user=user, patient_id=patient_id)
     appointments = AppointmentService.get_patient_appointments(db, patient_id)
     return appointments
 

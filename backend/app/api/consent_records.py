@@ -5,6 +5,7 @@ from app.db.database import get_db
 from app.schemas.consent_record import ConsentRecordCreate, ConsentRecordResponse
 from app.services.consent_record_service import ConsentRecordService
 from app.services.auth_service import AuthService
+from app.core.access_control import require_patient_access
 
 router = APIRouter(prefix="/consent", tags=["Consent Management"])
 
@@ -71,6 +72,7 @@ async def get_patient_consents(
     Requires: JWT token
     """
     user = AuthService.get_current_user(db, token)
+    require_patient_access(db, user=user, patient_id=patient_id)
     consents = ConsentRecordService.get_patient_consents(db, patient_id)
     return consents
 

@@ -5,6 +5,7 @@ from app.db.database import get_db
 from app.schemas.vital_sign import VitalSignCreate, VitalSignResponse
 from app.services.vital_sign_service import VitalSignService
 from app.services.auth_service import AuthService
+from app.core.access_control import require_patient_access
 
 router = APIRouter(prefix="/vital-signs", tags=["Vital Signs"])
 
@@ -68,5 +69,6 @@ async def get_patient_vital_signs(
     Requires: JWT token
     """
     user = AuthService.get_current_user(db, token)
+    require_patient_access(db, user=user, patient_id=patient_id)
     vitals = VitalSignService.get_patient_vital_signs(db, patient_id)
     return vitals

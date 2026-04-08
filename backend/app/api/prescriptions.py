@@ -5,6 +5,7 @@ from app.db.database import get_db
 from app.schemas.prescription import PrescriptionCreate, PrescriptionResponse
 from app.services.prescription_service import PrescriptionService
 from app.services.auth_service import AuthService
+from app.core.access_control import require_patient_access
 
 router = APIRouter(prefix="/prescriptions", tags=["Prescriptions"])
 
@@ -73,6 +74,7 @@ async def get_patient_prescriptions(
     Requires: JWT token
     """
     user = AuthService.get_current_user(db, token)
+    require_patient_access(db, user=user, patient_id=patient_id)
     prescriptions = PrescriptionService.get_patient_prescriptions(db, patient_id)
     return prescriptions
 

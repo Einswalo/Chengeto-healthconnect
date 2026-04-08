@@ -5,6 +5,7 @@ from app.db.database import get_db
 from app.schemas.medical_record import MedicalRecordCreate, MedicalRecordUpdate, MedicalRecordResponse
 from app.services.medical_record_service import MedicalRecordService
 from app.services.auth_service import AuthService
+from app.core.access_control import require_patient_access
 
 router = APIRouter(prefix="/medical-records", tags=["Medical Records"])
 
@@ -65,6 +66,7 @@ async def get_patient_medical_records(
     Requires: JWT token
     """
     user = AuthService.get_current_user(db, token)
+    require_patient_access(db, user=user, patient_id=patient_id)
     records = MedicalRecordService.get_patient_medical_records(db, patient_id)
     return records
 

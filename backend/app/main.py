@@ -49,6 +49,11 @@ async def ensure_blockchain_table():
     """
     with engine.begin() as conn:
         conn.execute(text(create_table_sql))
+        # Add blockchain_hash columns for new audited tables (best-effort, idempotent)
+        conn.execute(text("ALTER TABLE IF EXISTS medical_records ADD COLUMN IF NOT EXISTS blockchain_hash VARCHAR(255);"))
+        conn.execute(text("ALTER TABLE IF EXISTS ai_predictions ADD COLUMN IF NOT EXISTS blockchain_hash VARCHAR(255);"))
+        conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_medical_records_blockchain_hash ON medical_records(blockchain_hash) WHERE blockchain_hash IS NOT NULL;"))
+        conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ux_ai_predictions_blockchain_hash ON ai_predictions(blockchain_hash) WHERE blockchain_hash IS NOT NULL;"))
 
 # Configure CORS
 app.add_middleware(

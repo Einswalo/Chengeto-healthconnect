@@ -67,7 +67,6 @@ class PrescriptionService:
             
             # Generate blockchain token (readable format)
             new_prescription.blockchain_token = f"RX-{prescription_block.hash[:16].upper()}"
-            new_prescription.blockchain_token = prescription_block.hash
             
             # Save block to blockchain
             blockchain_record = BlockchainBlock(

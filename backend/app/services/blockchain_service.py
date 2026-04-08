@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 from app.models.consent_record import ConsentRecord
 from app.models.prescription import Prescription
 from app.models.emergency_access_log import EmergencyAccessLog
+from app.models.medical_record import MedicalRecord
+from app.models.ai_prediction import AIPrediction
 
 
 class Block:
@@ -53,6 +55,8 @@ class BlockchainService:
     - Consent records (patient consent verification)
     - Prescriptions (medication verification)
     - Emergency access (audit trail)
+    - Medical records (clinical notes / diagnosis)
+    - AI predictions (clinical decision support trace)
     """
     
     @staticmethod
@@ -132,6 +136,44 @@ class BlockchainService:
             "timestamp": datetime.utcnow().isoformat()
         }
         
+        return Block(
+            index=index,
+            timestamp=datetime.utcnow().isoformat(),
+            data=data,
+            previous_hash=previous_hash
+        )
+
+    @staticmethod
+    def create_medical_record_block(record: MedicalRecord, previous_hash: str, index: int) -> Block:
+        data = {
+            "type": "medical_record",
+            "record_id": record.record_id,
+            "patient_id": record.patient_id,
+            "provider_id": record.provider_id,
+            "facility_id": record.facility_id,
+            "visit_date": str(record.visit_date),
+            "diagnosis": record.diagnosis,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        return Block(
+            index=index,
+            timestamp=datetime.utcnow().isoformat(),
+            data=data,
+            previous_hash=previous_hash
+        )
+
+    @staticmethod
+    def create_ai_prediction_block(pred: AIPrediction, previous_hash: str, index: int) -> Block:
+        data = {
+            "type": "ai_prediction",
+            "prediction_id": pred.prediction_id,
+            "patient_id": pred.patient_id,
+            "record_id": pred.record_id,
+            "predicted_condition": pred.predicted_condition,
+            "confidence_score": float(pred.confidence_score) if pred.confidence_score is not None else None,
+            "ai_model_version": pred.ai_model_version,
+            "timestamp": datetime.utcnow().isoformat()
+        }
         return Block(
             index=index,
             timestamp=datetime.utcnow().isoformat(),

@@ -7,6 +7,7 @@ from app.schemas.auth import UserRegister
 from app.services.patient_service import PatientService
 from app.services.auth_service import AuthService
 from app.models.user import User
+from app.core.access_control import require_patient_access
 
 router = APIRouter(prefix="/patients", tags=["Patients"])
 
@@ -91,6 +92,7 @@ async def get_patient(patient_id: int, token: str, db: Session = Depends(get_db)
     """
     # Verify user is authenticated
     user = AuthService.get_current_user(db, token)
+    require_patient_access(db, user=user, patient_id=patient_id)
     
     patient = PatientService.get_patient_by_id(db, patient_id)
     return patient

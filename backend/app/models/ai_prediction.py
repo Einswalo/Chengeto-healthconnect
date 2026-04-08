@@ -13,6 +13,7 @@ class AIPrediction(Base):
     predicted_condition = Column(String(200))
     confidence_score = Column(Numeric(5, 2))  # e.g., 85.50
     ai_model_version = Column(String(50))
+    blockchain_hash = Column(String(255), unique=True, nullable=True)
     prediction_date = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships

@@ -5,6 +5,7 @@ from app.db.database import get_db
 from app.schemas.ai_prediction import AIPredictionCreate, AIPredictionResponse
 from app.services.ai_service import AIService
 from app.services.auth_service import AuthService
+from app.core.access_control import require_patient_access
 
 router = APIRouter(prefix="/ai", tags=["AI Disease Prediction"])
 
@@ -74,5 +75,6 @@ async def get_patient_predictions(
     Shows history of AI-assisted diagnoses
     """
     user = AuthService.get_current_user(db, token)
+    require_patient_access(db, user=user, patient_id=patient_id)
     predictions = AIService.get_patient_predictions(db, patient_id)
     return predictions

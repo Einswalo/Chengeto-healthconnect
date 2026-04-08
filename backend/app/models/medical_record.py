@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Text, Date, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, Text, Date, DateTime, ForeignKey, String
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.db.database import Base
@@ -15,6 +15,7 @@ class MedicalRecord(Base):
     symptoms = Column(Text)
     treatment_plan = Column(Text)
     notes = Column(Text)
+    blockchain_hash = Column(String(255), unique=True, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
