@@ -54,6 +54,26 @@ function Dashboard() {
   const apiBaseUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
   const api = useMemo(() => axios.create({ baseURL: apiBaseUrl, timeout: 20000 }), [apiBaseUrl]);
 
+  const stringifyError = useCallback((v) => {
+    if (v === null || v === undefined) return '';
+    if (typeof v === 'string') return v;
+    if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+    if (Array.isArray(v)) return v.map(stringifyError).filter(Boolean).join('\n');
+    if (typeof v === 'object') {
+      // Common FastAPI error shape: { detail: [...] } or list items with {loc,msg,type}
+      if ('detail' in v) return stringifyError(v.detail);
+      if ('msg' in v && typeof v.msg === 'string') return v.msg;
+      try {
+        return JSON.stringify(v, null, 2);
+      } catch {
+        return String(v);
+      }
+    }
+    return String(v);
+  }, []);
+
+  const setErrorSafe = useCallback((v) => setError(stringifyError(v)), [stringifyError]);
+
   const pageTitles = useMemo(() => ({
     dashboard: 'Dashboard',
     records: 'Medical records',
@@ -147,7 +167,7 @@ function Dashboard() {
       setLoading(false);
     } catch (error) {
       console.error('Error fetching data:', error);
-      setError('Failed to load dashboard data. Please check that the backend is running and try again.');
+      setErrorSafe(error?.response?.data?.detail || error?.message || 'Failed to load dashboard data. Please check that the backend is running and try again.');
       setLoading(false);
     }
   }, [api, token, selectedPatient]);
@@ -333,7 +353,7 @@ function Dashboard() {
       await fetchUserData();
     } catch (e) {
       console.error(e);
-      setError('Failed to mark prescription as dispensed (check role permissions and backend).');
+      setErrorSafe(e?.response?.data?.detail || 'Failed to mark prescription as dispensed (check role permissions and backend).');
     }
   };
 
@@ -346,7 +366,7 @@ function Dashboard() {
       }
     } catch (e) {
       console.error(e);
-      setError('Failed to update consent. (Granting new consent requires a dedicated form; revoking requires patient ownership.)');
+      setErrorSafe(e?.response?.data?.detail || 'Failed to update consent. (Granting new consent requires a dedicated form; revoking requires patient ownership.)');
     }
   };
 
@@ -366,7 +386,7 @@ function Dashboard() {
       await fetchUserData();
     } catch (e) {
       console.error(e);
-      setError('Failed to request emergency access. This endpoint requires a doctor/nurse/admin token.');
+      setErrorSafe(e?.response?.data?.detail || 'Failed to request emergency access. This endpoint requires a doctor/nurse/admin token.');
     }
   };
 
@@ -377,7 +397,7 @@ function Dashboard() {
       setPatientSearchResults(Array.isArray(resp.data) ? resp.data : []);
     } catch (e) {
       console.error(e);
-      setError('Patient search failed. Make sure you are logged in as a doctor/nurse/admin.');
+      setErrorSafe(e?.response?.data?.detail || 'Patient search failed. Make sure you are logged in as a doctor/nurse/admin.');
     }
   };
 
@@ -388,7 +408,7 @@ function Dashboard() {
       setActivePage('dashboard');
     } catch (e) {
       console.error(e);
-      setError('Failed to load selected patient.');
+      setErrorSafe(e?.response?.data?.detail || 'Failed to load selected patient.');
     }
   };
 
@@ -419,7 +439,7 @@ function Dashboard() {
       setActivePage('records');
     } catch (e) {
       console.error(e);
-      setError('Failed to create medical record. Check your token role and required fields.');
+      setErrorSafe(e?.response?.data?.detail || 'Failed to create medical record. Check your token role and required fields.');
     }
   };
 
@@ -456,7 +476,7 @@ function Dashboard() {
       await fetchUserData();
     } catch (e) {
       console.error(e);
-      setError('Failed to create prescription. Check permissions and backend.');
+      setErrorSafe(e?.response?.data?.detail || 'Failed to create prescription. Check permissions and backend.');
     }
   };
 
@@ -489,7 +509,7 @@ function Dashboard() {
       setActivePage('ai');
     } catch (e) {
       console.error(e);
-      setError('Failed to run AI prediction on backend. Ensure you are doctor/nurse/admin.');
+      setErrorSafe(e?.response?.data?.detail || 'Failed to run AI prediction on backend. Ensure you are doctor/nurse/admin.');
     }
   };
 

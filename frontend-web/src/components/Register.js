@@ -27,6 +27,23 @@ function Register({ onGoToLogin }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
+  const stringifyError = (v) => {
+    if (v === null || v === undefined) return '';
+    if (typeof v === 'string') return v;
+    if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+    if (Array.isArray(v)) return v.map(stringifyError).filter(Boolean).join('\n');
+    if (typeof v === 'object') {
+      if ('detail' in v) return stringifyError(v.detail);
+      if ('msg' in v && typeof v.msg === 'string') return v.msg;
+      try {
+        return JSON.stringify(v, null, 2);
+      } catch {
+        return String(v);
+      }
+    }
+    return String(v);
+  };
+
   const canSubmit = useMemo(() => {
     return (
       form.first_name &&
@@ -70,7 +87,7 @@ function Register({ onGoToLogin }) {
       setSuccess('Registration successful. You can now log in.');
       setTimeout(() => onGoToLogin?.(), 700);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Registration failed. Please check your details.');
+      setError(stringifyError(err.response?.data?.detail || err.message || 'Registration failed. Please check your details.'));
     } finally {
       setLoading(false);
     }
