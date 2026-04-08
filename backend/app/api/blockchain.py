@@ -182,4 +182,21 @@ async def verify_record(
     data = json.loads(block.data)
     verified_block = Block(
         index=block.block_index,
-        timestamp=block.timestamp,)
+        timestamp=block.timestamp,
+        data=data,
+        previous_hash=block.previous_hash
+    )
+    
+    is_hash_valid = verified_block.hash == block.block_hash
+    
+    return {
+        "found": True,
+        "record_type": record_type,
+        "record_id": record_id,
+        "block_index": block.block_index,
+        "timestamp": block.timestamp,
+        "block_hash": block.block_hash,
+        "previous_hash": block.previous_hash,
+        "hash_valid": is_hash_valid,
+        "data": data
+    }

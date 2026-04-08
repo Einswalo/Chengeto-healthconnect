@@ -26,6 +26,30 @@ app = FastAPI(
     debug=settings.DEBUG
 )
 
+@app.on_event("startup")
+async def ensure_blockchain_table():
+    """
+    Ensure the blockchain_blocks table exists.
+    
+    This project doesn't run migrations automatically; without this, new setups
+    that used the original schema.sql won't have the blockchain table.
+    """
+    create_table_sql = """
+    CREATE TABLE IF NOT EXISTS blockchain_blocks (
+        block_id SERIAL PRIMARY KEY,
+        block_index INTEGER UNIQUE NOT NULL,
+        block_hash VARCHAR(255) UNIQUE NOT NULL,
+        previous_hash VARCHAR(255) NOT NULL,
+        timestamp VARCHAR(100) NOT NULL,
+        block_type VARCHAR(50) NOT NULL,
+        record_id INTEGER NOT NULL,
+        data TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    """
+    with engine.begin() as conn:
+        conn.execute(text(create_table_sql))
+
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,

@@ -5,6 +5,10 @@ import './Dashboard.css';
 function Dashboard() {
   const [user, setUser] = useState(null);
   const [patient, setPatient] = useState(null);
+  const [provider, setProvider] = useState(null);
+  const [selectedPatient, setSelectedPatient] = useState(null);
+  const [patientSearchQ, setPatientSearchQ] = useState('');
+  const [patientSearchResults, setPatientSearchResults] = useState([]);
   const [predictions, setPredictions] = useState([]);
   const [prescriptions, setPrescriptions] = useState([]);
   const [medicalRecords, setMedicalRecords] = useState([]);
@@ -25,6 +29,24 @@ function Dashboard() {
   const [emergencyClinicianId, setEmergencyClinicianId] = useState('');
   const [emergencyReason, setEmergencyReason] = useState('');
   const [emergencyWindow, setEmergencyWindow] = useState('1 hour');
+
+  const [newRecord, setNewRecord] = useState({
+    visit_date: new Date().toISOString().slice(0, 10),
+    diagnosis: '',
+    symptoms: '',
+    treatment_plan: '',
+    notes: '',
+    facility_id: '',
+  });
+
+  const [newPrescription, setNewPrescription] = useState({
+    medication_name: '',
+    dosage: '',
+    frequency: '',
+    duration: '',
+    instructions: '',
+    record_id: '',
+  });
 
   const token = localStorage.getItem('token');
   const email = localStorage.getItem('email');
@@ -59,13 +81,26 @@ function Dashboard() {
 
       let patientId = null;
 
+      // provider profile (doctor/nurse/etc)
+      if (u?.user_type && ["doctor", "nurse", "admin", "pharmacist"].includes(u.user_type)) {
+        const providerResp = await Promise.allSettled([api.get(`/providers/me?token=${token}`)]);
+        setProvider(providerResp[0].status === 'fulfilled' ? providerResp[0].value.data : null);
+      } else {
+        setProvider(null);
+      }
+
       if (u?.user_type === 'patient') {
         const patientResponse = await api.get(`/patients/me?token=${token}`);
         const p = patientResponse.data;
         setPatient(p);
+        setSelectedPatient(null);
         patientId = p?.patient_id ?? null;
+      } else if (selectedPatient?.patient_id) {
+        setPatient(null);
+        patientId = selectedPatient.patient_id;
       } else {
         setPatient(null);
+        patientId = null;
       }
 
       // Best-effort patient-centric data (some pages will still render with placeholders)
@@ -115,7 +150,7 @@ function Dashboard() {
       setError('Failed to load dashboard data. Please check that the backend is running and try again.');
       setLoading(false);
     }
-  }, [api, token]);
+  }, [api, token, selectedPatient]);
 
   useEffect(() => {
     fetchUserData();
@@ -309,20 +344,144 @@ function Dashboard() {
 
   const requestEmergencyAccess = async () => {
     try {
-      if (!patient?.patient_id) {
+      const pid = patient?.patient_id || selectedPatient?.patient_id;
+      if (!pid) {
         setError('Emergency access requires a patient context.');
         return;
       }
       await api.post(`/emergency-access/?token=${token}`, {
-        patient_id: patient.patient_id,
-        provider_id: user?.user_id,
-        facility_id: 1,
+        patient_id: pid,
+        provider_id: provider?.provider_id ?? null,
+        facility_id: Number(newRecord.facility_id) || 1,
         access_reason: `[${emergencyFacility}] ${emergencyClinicianId ? `Clinician ${emergencyClinicianId}: ` : ''}${emergencyReason} (window: ${emergencyWindow})`,
       });
       await fetchUserData();
     } catch (e) {
       console.error(e);
       setError('Failed to request emergency access. This endpoint requires a doctor/nurse/admin token.');
+    }
+  };
+
+  const searchPatients = async () => {
+    try {
+      setError('');
+      const resp = await api.get(`/patients/search?token=${token}&q=${encodeURIComponent(patientSearchQ)}&limit=12`);
+      setPatientSearchResults(Array.isArray(resp.data) ? resp.data : []);
+    } catch (e) {
+      console.error(e);
+      setError('Patient search failed. Make sure you are logged in as a doctor/nurse/admin.');
+    }
+  };
+
+  const selectPatientById = async (patientId) => {
+    try {
+      const resp = await api.get(`/patients/${patientId}?token=${token}`);
+      setSelectedPatient(resp.data);
+      setActivePage('dashboard');
+    } catch (e) {
+      console.error(e);
+      setError('Failed to load selected patient.');
+    }
+  };
+
+  const createMedicalRecord = async () => {
+    try {
+      setError('');
+      const pid = selectedPatient?.patient_id;
+      if (!pid) {
+        setError('Select a patient first.');
+        return;
+      }
+      if (!provider?.provider_id && user?.user_type !== 'admin') {
+        setError('Provider profile not found for this account (missing provider_id).');
+        return;
+      }
+      await api.post(`/medical-records/?token=${token}`, {
+        patient_id: pid,
+        provider_id: provider?.provider_id ?? null,
+        facility_id: newRecord.facility_id ? Number(newRecord.facility_id) : null,
+        visit_date: newRecord.visit_date,
+        diagnosis: newRecord.diagnosis || null,
+        symptoms: newRecord.symptoms || null,
+        treatment_plan: newRecord.treatment_plan || null,
+        notes: newRecord.notes || null,
+      });
+      setNewRecord((r) => ({ ...r, diagnosis: '', symptoms: '', treatment_plan: '', notes: '' }));
+      await fetchUserData();
+      setActivePage('records');
+    } catch (e) {
+      console.error(e);
+      setError('Failed to create medical record. Check your token role and required fields.');
+    }
+  };
+
+  const createPrescription = async () => {
+    try {
+      setError('');
+      const pid = selectedPatient?.patient_id;
+      if (!pid) {
+        setError('Select a patient first.');
+        return;
+      }
+      if (!newPrescription.medication_name || !newPrescription.dosage || !newPrescription.frequency) {
+        setError('Medication name, dosage, and frequency are required.');
+        return;
+      }
+      await api.post(`/prescriptions/?token=${token}`, {
+        patient_id: pid,
+        provider_id: provider?.provider_id ?? null,
+        record_id: newPrescription.record_id ? Number(newPrescription.record_id) : null,
+        medication_name: newPrescription.medication_name,
+        dosage: newPrescription.dosage,
+        frequency: newPrescription.frequency,
+        duration: newPrescription.duration || null,
+        instructions: newPrescription.instructions || null,
+      });
+      setNewPrescription({
+        medication_name: '',
+        dosage: '',
+        frequency: '',
+        duration: '',
+        instructions: '',
+        record_id: '',
+      });
+      await fetchUserData();
+    } catch (e) {
+      console.error(e);
+      setError('Failed to create prescription. Check permissions and backend.');
+    }
+  };
+
+  const runAiAndSave = async () => {
+    try {
+      setError('');
+      const pid = selectedPatient?.patient_id;
+      if (!pid) {
+        setError('Select a patient first.');
+        return;
+      }
+      const sel = [...aiSelected];
+      if (!sel.length) {
+        setError('Select symptoms first.');
+        return;
+      }
+      const symptomsText = sel.join(', ');
+      await api.post(`/ai/predict?token=${token}`, {
+        patient_id: pid,
+        record_id: null,
+        symptoms: symptomsText,
+        vital_signs: latestVitals ? {
+          temperature: latestVitals.temperature,
+          heart_rate: latestVitals.heart_rate,
+          blood_pressure: latestVitals.blood_pressure || null
+        } : null,
+        patient_location: aiGeo,
+      });
+      await fetchUserData();
+      setActivePage('ai');
+    } catch (e) {
+      console.error(e);
+      setError('Failed to run AI prediction on backend. Ensure you are doctor/nurse/admin.');
     }
   };
 
@@ -348,10 +507,15 @@ function Dashboard() {
           </div>
         </div>
 
-        <div className="hcNavSection">Patient</div>
+        <div className="hcNavSection">{user?.user_type === 'patient' ? 'Patient' : 'Clinical'}</div>
         <button type="button" className={`hcNavItem ${activePage === 'dashboard' ? 'hcNavItemActive' : ''}`} onClick={() => setActivePage('dashboard')}>
           <span className="hcNavIcon">⊞</span>Dashboard
         </button>
+        {user?.user_type !== 'patient' && (
+          <button type="button" className={`hcNavItem ${activePage === 'patients' ? 'hcNavItemActive' : ''}`} onClick={() => setActivePage('patients')}>
+            <span className="hcNavIcon">⌕</span>Patients
+          </button>
+        )}
         <button type="button" className={`hcNavItem ${activePage === 'records' ? 'hcNavItemActive' : ''}`} onClick={() => setActivePage('records')}>
           <span className="hcNavIcon">◧</span>Medical records
         </button>
@@ -362,7 +526,7 @@ function Dashboard() {
           <span className="hcNavIcon">◉</span>Consent manager
         </button>
 
-        <div className="hcNavSection">Clinical</div>
+        <div className="hcNavSection">AI & Audit</div>
         <button type="button" className={`hcNavItem ${activePage === 'ai' ? 'hcNavItemActive' : ''}`} onClick={() => setActivePage('ai')}>
           <span className="hcNavIcon">◈</span>AI diagnostics
         </button>
@@ -370,10 +534,14 @@ function Dashboard() {
           <span className="hcNavIcon">⛓</span>Blockchain audit
         </button>
 
-        <div className="hcNavSection">Admin</div>
-        <button type="button" className={`hcNavItem ${activePage === 'emergency' ? 'hcNavItemActive' : ''}`} onClick={() => setActivePage('emergency')}>
-          <span className="hcNavIcon">⚡</span>Emergency access
-        </button>
+        {(user?.user_type === 'admin' || user?.user_type === 'doctor' || user?.user_type === 'nurse') && (
+          <>
+            <div className="hcNavSection">Admin</div>
+            <button type="button" className={`hcNavItem ${activePage === 'emergency' ? 'hcNavItemActive' : ''}`} onClick={() => setActivePage('emergency')}>
+              <span className="hcNavIcon">⚡</span>Emergency access
+            </button>
+          </>
+        )}
       </nav>
 
       <div className="hcMain">
@@ -453,11 +621,15 @@ function Dashboard() {
                         {patient?.first_name?.[0] || 'H'}{patient?.last_name?.[0] || 'C'}
                       </div>
                       <div>
-                        <div style={{ fontSize: 15, fontWeight: 700 }}>
-                          {patient ? `${patient.first_name} ${patient.last_name}` : (email || 'User')}
-                        </div>
+                      <div style={{ fontSize: 15, fontWeight: 700 }}>
+                        {patient
+                          ? `${patient.first_name} ${patient.last_name}`
+                          : selectedPatient
+                            ? `${selectedPatient.first_name} ${selectedPatient.last_name}`
+                            : (email || 'User')}
+                      </div>
                         <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
-                          Patient ID: {patient?.patient_id ?? '—'}
+                          Patient ID: {(patient?.patient_id ?? selectedPatient?.patient_id) ?? '—'}
                         </div>
                       </div>
                     </div>
@@ -512,13 +684,103 @@ function Dashboard() {
             </div>
           )}
 
+          {/* PATIENT SEARCH */}
+          {activePage === 'patients' && (
+            <div>
+              <div className="hcSectionHdr">
+                <h2>Patients</h2>
+                <button type="button" className="hcBtn hcBtnPrimary" onClick={searchPatients}>Search</button>
+              </div>
+              <div className="hcCard" style={{ marginBottom: 16 }}>
+                <div className="hcFormGroup">
+                  <label className="hcLabel">Search</label>
+                  <input className="hcInput" value={patientSearchQ} onChange={(e) => setPatientSearchQ(e.target.value)} placeholder="Name, national ID, or phone" />
+                </div>
+                <div className="hcSep" />
+                {selectedPatient && (
+                  <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                    Selected: <strong style={{ color: 'var(--color-text-primary)' }}>{selectedPatient.first_name} {selectedPatient.last_name}</strong> (ID {selectedPatient.patient_id})
+                  </div>
+                )}
+              </div>
+              <div className="hcTableWrap">
+                <table className="hcTable">
+                  <thead>
+                    <tr>
+                      <th className="hcTh">Patient</th>
+                      <th className="hcTh">DOB</th>
+                      <th className="hcTh">City</th>
+                      <th className="hcTh">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {patientSearchResults.length ? patientSearchResults.map(p => (
+                      <tr key={p.patient_id} className="hcTr">
+                        <td className="hcTd">{p.first_name} {p.last_name}</td>
+                        <td className="hcTd">{p.date_of_birth}</td>
+                        <td className="hcTd">{p.city || '—'}</td>
+                        <td className="hcTd">
+                          <button type="button" className="hcBtn hcBtnPrimary" onClick={() => selectPatientById(p.patient_id)}>Open</button>
+                        </td>
+                      </tr>
+                    )) : (
+                      <tr className="hcTr"><td className="hcTd" colSpan={4}>Search for a patient to begin.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* RECORDS */}
           {activePage === 'records' && (
             <div>
               <div className="hcSectionHdr">
                 <h2>Medical records</h2>
-                <button type="button" className="hcBtn hcBtnPrimary" onClick={() => setActivePage('dashboard')}>Back to dashboard</button>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {(user?.user_type === 'doctor' || user?.user_type === 'nurse' || user?.user_type === 'admin') && (
+                    <button type="button" className="hcBtn hcBtnPrimary" onClick={createMedicalRecord} disabled={!selectedPatient}>
+                      + Add note/diagnosis
+                    </button>
+                  )}
+                  <button type="button" className="hcBtn" onClick={() => setActivePage('dashboard')}>Back</button>
+                </div>
               </div>
+              
+              {(user?.user_type === 'doctor' || user?.user_type === 'nurse' || user?.user_type === 'admin') && (
+                <div className="hcCard" style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>New clinical note</div>
+                  <div className="hcGrid2">
+                    <div className="hcFormGroup">
+                      <label className="hcLabel">Visit date</label>
+                      <input className="hcInput" type="text" value={newRecord.visit_date} onChange={(e) => setNewRecord(r => ({ ...r, visit_date: e.target.value }))} placeholder="YYYY-MM-DD" />
+                    </div>
+                    <div className="hcFormGroup">
+                      <label className="hcLabel">Facility ID (optional)</label>
+                      <input className="hcInput" type="text" value={newRecord.facility_id} onChange={(e) => setNewRecord(r => ({ ...r, facility_id: e.target.value }))} placeholder="e.g. 1" />
+                    </div>
+                  </div>
+                  <div className="hcSep" />
+                  <div className="hcFormGroup" style={{ marginBottom: 12 }}>
+                    <label className="hcLabel">Diagnosis</label>
+                    <input className="hcInput" value={newRecord.diagnosis} onChange={(e) => setNewRecord(r => ({ ...r, diagnosis: e.target.value }))} />
+                  </div>
+                  <div className="hcFormGroup" style={{ marginBottom: 12 }}>
+                    <label className="hcLabel">Symptoms</label>
+                    <textarea className="hcTextarea" rows={2} value={newRecord.symptoms} onChange={(e) => setNewRecord(r => ({ ...r, symptoms: e.target.value }))} />
+                  </div>
+                  <div className="hcFormGroup" style={{ marginBottom: 12 }}>
+                    <label className="hcLabel">Treatment plan</label>
+                    <textarea className="hcTextarea" rows={2} value={newRecord.treatment_plan} onChange={(e) => setNewRecord(r => ({ ...r, treatment_plan: e.target.value }))} />
+                  </div>
+                  <div className="hcFormGroup">
+                    <label className="hcLabel">Notes</label>
+                    <textarea className="hcTextarea" rows={3} value={newRecord.notes} onChange={(e) => setNewRecord(r => ({ ...r, notes: e.target.value }))} />
+                  </div>
+                  {!selectedPatient && <div style={{ marginTop: 10, fontSize: 12, color: 'var(--color-text-secondary)' }}>Select a patient first (Patients tab).</div>}
+                </div>
+              )}
+
               <div className="hcTableWrap">
                 <table className="hcTable">
                   <thead>
@@ -555,8 +817,44 @@ function Dashboard() {
             <div>
               <div className="hcSectionHdr">
                 <h2>Prescriptions</h2>
-                <button type="button" className="hcBtn hcBtnPrimary" onClick={fetchUserData}>Refresh</button>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {(user?.user_type === 'doctor' || user?.user_type === 'nurse' || user?.user_type === 'admin') && (
+                    <button type="button" className="hcBtn hcBtnPrimary" onClick={createPrescription} disabled={!selectedPatient}>
+                      + New prescription
+                    </button>
+                  )}
+                  <button type="button" className="hcBtn" onClick={fetchUserData}>Refresh</button>
+                </div>
               </div>
+              
+              {(user?.user_type === 'doctor' || user?.user_type === 'nurse' || user?.user_type === 'admin') && (
+                <div className="hcCard" style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>New prescription</div>
+                  <div className="hcGrid2">
+                    <div className="hcFormGroup">
+                      <label className="hcLabel">Medication name</label>
+                      <input className="hcInput" value={newPrescription.medication_name} onChange={(e) => setNewPrescription(p => ({ ...p, medication_name: e.target.value }))} />
+                    </div>
+                    <div className="hcFormGroup">
+                      <label className="hcLabel">Dosage</label>
+                      <input className="hcInput" value={newPrescription.dosage} onChange={(e) => setNewPrescription(p => ({ ...p, dosage: e.target.value }))} placeholder="e.g. 1 tablet" />
+                    </div>
+                    <div className="hcFormGroup">
+                      <label className="hcLabel">Frequency</label>
+                      <input className="hcInput" value={newPrescription.frequency} onChange={(e) => setNewPrescription(p => ({ ...p, frequency: e.target.value }))} placeholder="e.g. twice daily" />
+                    </div>
+                    <div className="hcFormGroup">
+                      <label className="hcLabel">Duration</label>
+                      <input className="hcInput" value={newPrescription.duration} onChange={(e) => setNewPrescription(p => ({ ...p, duration: e.target.value }))} placeholder="e.g. 7 days" />
+                    </div>
+                  </div>
+                  <div className="hcFormGroup" style={{ marginTop: 12 }}>
+                    <label className="hcLabel">Instructions (optional)</label>
+                    <textarea className="hcTextarea" rows={2} value={newPrescription.instructions} onChange={(e) => setNewPrescription(p => ({ ...p, instructions: e.target.value }))} />
+                  </div>
+                  {!selectedPatient && <div style={{ marginTop: 10, fontSize: 12, color: 'var(--color-text-secondary)' }}>Select a patient first (Patients tab).</div>}
+                </div>
+              )}
               {prescriptions.length ? prescriptions.map(rx => (
                 <div className="hcRxCard" key={rx.prescription_id}>
                   <div className="hcRxHdr">
@@ -658,6 +956,16 @@ function Dashboard() {
                     <button type="button" className="hcBtn hcBtnPrimary" style={{ width: '100%' }} onClick={runAiLocal}>
                       Run diagnostic analysis
                     </button>
+                    {(user?.user_type === 'doctor' || user?.user_type === 'nurse' || user?.user_type === 'admin') && (
+                      <button type="button" className="hcBtn" style={{ width: '100%', marginTop: 10 }} onClick={runAiAndSave} disabled={!selectedPatient}>
+                        Save to patient record (AI)
+                      </button>
+                    )}
+                    {!selectedPatient && user?.user_type !== 'patient' && (
+                      <div style={{ marginTop: 10, fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                        Select a patient first (Patients tab) to save AI results.
+                      </div>
+                    )}
                   </div>
                 </div>
                 <div>

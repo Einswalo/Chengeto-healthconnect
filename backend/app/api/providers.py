@@ -85,3 +85,15 @@ async def get_provider(
     user = AuthService.get_current_user(db, token)
     provider = HealthcareProviderService.get_provider_by_id(db, provider_id)
     return provider
+
+
+@router.get("/me", response_model=HealthcareProviderResponse)
+async def get_my_provider_profile(token: str, db: Session = Depends(get_db)):
+    """
+    Get current provider profile.
+    
+    Requires: JWT token (doctor/nurse/specialist/admin with provider profile)
+    """
+    user = AuthService.get_current_user(db, token)
+    provider = HealthcareProviderService.get_provider_by_user_id(db, user.user_id)
+    return provider

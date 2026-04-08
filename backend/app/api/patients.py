@@ -123,3 +123,43 @@ async def update_patient(
     updated_patient = PatientService.update_patient(db, patient_id, patient_data)
     return updated_patient
 
+
+@router.get("/search", response_model=List[PatientResponse])
+async def search_patients(
+    token: str,
+    q: str = None,
+    city: str = None,
+    blood_type: str = None,
+    gender: str = None,
+    skip: int = 0,
+    limit: int = 10,
+    db: Session = Depends(get_db)
+):
+    """
+    Search patients (providers/admin).
+    
+    Requires: JWT token (doctor/nurse/admin)
+    
+    Query params:
+    - q: name/national_id/phone search
+    - city, blood_type, gender: optional filters
+    - skip, limit: pagination
+    """
+    user = AuthService.get_current_user(db, token)
+    if user.user_type not in ["doctor", "nurse", "admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only healthcare providers can search patients"
+        )
+    
+    patients, _total = PatientService.search_patients(
+        db,
+        search_query=q,
+        city=city,
+        blood_type=blood_type,
+        gender=gender,
+        skip=skip,
+        limit=limit
+    )
+    return patients
+

@@ -13,6 +13,14 @@ class MedicalRecordCreate(BaseModel):
     treatment_plan: Optional[str] = None
     notes: Optional[str] = None
 
+
+class MedicalRecordUpdate(BaseModel):
+    visit_date: Optional[str] = None  # Format: "YYYY-MM-DD"
+    diagnosis: Optional[str] = None
+    symptoms: Optional[str] = None
+    treatment_plan: Optional[str] = None
+    notes: Optional[str] = None
+
 # Medical Record Response
 class MedicalRecordResponse(BaseModel):
     record_id: int

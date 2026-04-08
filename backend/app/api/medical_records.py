@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 from app.db.database import get_db
-from app.schemas.medical_record import MedicalRecordCreate, MedicalRecordResponse
+from app.schemas.medical_record import MedicalRecordCreate, MedicalRecordUpdate, MedicalRecordResponse
 from app.services.medical_record_service import MedicalRecordService
 from app.services.auth_service import AuthService
 
@@ -67,3 +67,26 @@ async def get_patient_medical_records(
     user = AuthService.get_current_user(db, token)
     records = MedicalRecordService.get_patient_medical_records(db, patient_id)
     return records
+
+
+@router.put("/{record_id}", response_model=MedicalRecordResponse)
+async def update_medical_record(
+    record_id: int,
+    update: MedicalRecordUpdate,
+    token: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Update an existing medical record.
+    
+    Requires: JWT token (doctor/nurse/admin)
+    """
+    user = AuthService.get_current_user(db, token)
+    if user.user_type not in ["doctor", "nurse", "admin"]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only healthcare providers can update medical records"
+        )
+    
+    record = MedicalRecordService.update_medical_record(db, record_id, update)
+    return record
