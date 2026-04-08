@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import './Dashboard.css';
 
@@ -7,46 +7,107 @@ function Dashboard() {
   const [patient, setPatient] = useState(null);
   const [predictions, setPredictions] = useState([]);
   const [prescriptions, setPrescriptions] = useState([]);
+  const [medicalRecords, setMedicalRecords] = useState([]);
+  const [consents, setConsents] = useState([]);
+  const [vitalSigns, setVitalSigns] = useState([]);
+  const [emergencyLogs, setEmergencyLogs] = useState([]);
   const [blockchainStatus, setBlockchainStatus] = useState(null);
+  const [blockchainBlocks, setBlockchainBlocks] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activePage, setActivePage] = useState('dashboard');
+
+  const [aiSelected, setAiSelected] = useState(() => new Set());
+  const [aiGeo, setAiGeo] = useState('Harare (urban)');
+  const [aiResultHtml, setAiResultHtml] = useState('');
+
+  const [emergencyFacility, setEmergencyFacility] = useState('Chitungwiza Central Hospital');
+  const [emergencyClinicianId, setEmergencyClinicianId] = useState('');
+  const [emergencyReason, setEmergencyReason] = useState('');
+  const [emergencyWindow, setEmergencyWindow] = useState('1 hour');
 
   const token = localStorage.getItem('token');
   const email = localStorage.getItem('email');
 
   const apiBaseUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
-  const api = axios.create({ baseURL: apiBaseUrl, timeout: 15000 });
+  const api = useMemo(() => axios.create({ baseURL: apiBaseUrl, timeout: 20000 }), [apiBaseUrl]);
+
+  const pageTitles = useMemo(() => ({
+    dashboard: 'Dashboard',
+    records: 'Medical records',
+    prescriptions: 'Prescriptions',
+    consent: 'Consent manager',
+    ai: 'AI diagnostics',
+    blockchain: 'Blockchain audit',
+    emergency: 'Emergency access',
+  }), []);
+
+  const avatarText = useMemo(() => {
+    const parts = String(email || 'HC').split('@')[0].split(/[.\-_ ]+/).filter(Boolean);
+    const initials = (parts[0]?.[0] || 'H') + (parts[1]?.[0] || 'C');
+    return initials.toUpperCase();
+  }, [email]);
 
   const fetchUserData = useCallback(async () => {
     try {
       setError('');
-      // Get current user
-      const userResponse = await api.get(`/auth/me?token=${token}`);
-      setUser(userResponse.data);
+      setLoading(true);
 
-      // If patient, load patient-centric data
-      if (userResponse.data.user_type === 'patient') {
+      const userResponse = await api.get(`/auth/me?token=${token}`);
+      const u = userResponse.data;
+      setUser(u);
+
+      let patientId = null;
+
+      if (u?.user_type === 'patient') {
         const patientResponse = await api.get(`/patients/me?token=${token}`);
         const p = patientResponse.data;
         setPatient(p);
-
-        // Get AI predictions
-        const predictionsResponse = await api.get(`/ai/predictions/patient/${p.patient_id}?token=${token}`);
-        setPredictions(Array.isArray(predictionsResponse.data) ? predictionsResponse.data : []);
-
-        // Get prescriptions
-        const prescriptionsResponse = await api.get(`/prescriptions/patient/${p.patient_id}?token=${token}`);
-        setPrescriptions(Array.isArray(prescriptionsResponse.data) ? prescriptionsResponse.data : []);
+        patientId = p?.patient_id ?? null;
+      } else {
+        setPatient(null);
       }
 
-      // Load blockchain integrity status (best-effort; any authenticated user)
-      try {
-        const bc = await api.get(`/blockchain/verify?token=${token}`);
-        setBlockchainStatus(bc.data);
-      } catch (_e) {
-        setBlockchainStatus(null);
+      // Best-effort patient-centric data (some pages will still render with placeholders)
+      if (patientId) {
+        const [
+          predictionsResponse,
+          prescriptionsResponse,
+          consentsResponse,
+          emergencyResponse,
+          vitalResponse,
+          medicalRecordsResponse,
+        ] = await Promise.allSettled([
+          api.get(`/ai/predictions/patient/${patientId}?token=${token}`),
+          api.get(`/prescriptions/patient/${patientId}?token=${token}`),
+          api.get(`/consent/patient/${patientId}?token=${token}`),
+          api.get(`/emergency-access/patient/${patientId}?token=${token}`),
+          api.get(`/vital-signs/patient/${patientId}?token=${token}`),
+          api.get(`/medical-records/patient/${patientId}?token=${token}`),
+        ]);
+
+        setPredictions(predictionsResponse.status === 'fulfilled' && Array.isArray(predictionsResponse.value.data) ? predictionsResponse.value.data : []);
+        setPrescriptions(prescriptionsResponse.status === 'fulfilled' && Array.isArray(prescriptionsResponse.value.data) ? prescriptionsResponse.value.data : []);
+        setConsents(consentsResponse.status === 'fulfilled' && Array.isArray(consentsResponse.value.data) ? consentsResponse.value.data : []);
+        setEmergencyLogs(emergencyResponse.status === 'fulfilled' && Array.isArray(emergencyResponse.value.data) ? emergencyResponse.value.data : []);
+        setVitalSigns(vitalResponse.status === 'fulfilled' && Array.isArray(vitalResponse.value.data) ? vitalResponse.value.data : []);
+        setMedicalRecords(medicalRecordsResponse.status === 'fulfilled' && Array.isArray(medicalRecordsResponse.value.data) ? medicalRecordsResponse.value.data : []);
+      } else {
+        setPredictions([]);
+        setPrescriptions([]);
+        setConsents([]);
+        setEmergencyLogs([]);
+        setVitalSigns([]);
+        setMedicalRecords([]);
       }
+
+      // Blockchain status + blocks
+      const bcVerify = await Promise.allSettled([
+        api.get(`/blockchain/verify?token=${token}`),
+        api.get(`/blockchain/blocks?token=${token}`),
+      ]);
+      setBlockchainStatus(bcVerify[0].status === 'fulfilled' ? bcVerify[0].value.data : null);
+      setBlockchainBlocks(bcVerify[1].status === 'fulfilled' ? (bcVerify[1].value.data?.blocks || []) : []);
 
       setLoading(false);
     } catch (error) {
@@ -66,394 +127,676 @@ function Dashboard() {
     window.location.reload();
   };
 
-  const statValue = (value) => (value === null || value === undefined ? '—' : value);
+  const statValue = (value) => (value === null || value === undefined ? '—' : String(value));
 
-  const pendingPrescriptions = prescriptions.filter(p => !p.is_dispensed).length;
-  const dispensedPrescriptions = prescriptions.filter(p => p.is_dispensed).length;
+  const pendingPrescriptions = useMemo(
+    () => prescriptions.filter(p => !p.is_dispensed).length,
+    [prescriptions]
+  );
 
-  const tabs = (() => {
-    const base = [
-      { id: 'overview', label: 'Overview', icon: '📊' },
-      { id: 'predictions', label: 'AI Predictions', icon: '🤖' },
-      { id: 'prescriptions', label: 'Prescriptions', icon: '💊' },
-      { id: 'blockchain', label: 'Blockchain', icon: '🔗' },
-    ];
+  const activeConsents = useMemo(
+    () => consents.filter(c => c.consent_given).length,
+    [consents]
+  );
 
-    if (user?.user_type === 'patient') {
-      base.splice(1, 0, { id: 'profile', label: 'My Profile', icon: '👤' });
+  const expiringSoonConsents = useMemo(() => {
+    const now = new Date();
+    const soon = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    return consents.filter(c => {
+      if (!c.consent_given) return false;
+      if (!c.valid_until) return false;
+      const d = new Date(c.valid_until);
+      return d >= now && d <= soon;
+    }).length;
+  }, [consents]);
+
+  const facilitiesCount = useMemo(() => {
+    const set = new Set();
+    for (const r of medicalRecords) {
+      if (r.facility_id) set.add(r.facility_id);
+      else if (r.facility_name) set.add(r.facility_name);
+    }
+    return set.size || null;
+  }, [medicalRecords]);
+
+  const latestVitals = useMemo(() => {
+    if (!vitalSigns.length) return null;
+    const sorted = [...vitalSigns].sort((a, b) => {
+      const da = new Date(a.recorded_at || a.created_at || 0).getTime();
+      const db = new Date(b.recorded_at || b.created_at || 0).getTime();
+      return db - da;
+    });
+    return sorted[0];
+  }, [vitalSigns]);
+
+  const recentActivity = useMemo(() => {
+    const items = [];
+    for (const rx of prescriptions.slice(0, 5)) {
+      items.push({
+        key: `rx-${rx.prescription_id}`,
+        dot: 'blue',
+        title: `Prescription ${rx.is_dispensed ? 'dispensed' : 'issued'} — ${rx.medication_name}`,
+        meta: `${new Date(rx.prescription_date).toLocaleString()} · Token ${rx.blockchain_token ? 'recorded' : 'pending'}`,
+      });
+    }
+    for (const c of consents.slice(0, 5)) {
+      items.push({
+        key: `cons-${c.consent_id}`,
+        dot: c.consent_given ? 'green' : 'red',
+        title: `${c.consent_given ? 'Consent granted' : 'Consent revoked'} — Provider ${c.provider_id}`,
+        meta: `${new Date(c.created_at || Date.now()).toLocaleString()} · ${c.valid_until ? `Expires ${c.valid_until}` : 'Permanent'}`,
+      });
+    }
+    for (const p of predictions.slice(0, 5)) {
+      items.push({
+        key: `ai-${p.prediction_id}`,
+        dot: 'amber',
+        title: `AI diagnostic — ${p.predicted_condition}`,
+        meta: `${new Date(p.prediction_date).toLocaleString()} · Score ${(Number(p.confidence_score) / 100).toFixed(2)}`,
+      });
+    }
+    for (const r of medicalRecords.slice(0, 5)) {
+      items.push({
+        key: `mr-${r.record_id || r.medical_record_id || Math.random()}`,
+        dot: 'blue',
+        title: `New record added — ${r.record_type || 'Medical record'}`,
+        meta: `${new Date(r.record_date || r.created_at || Date.now()).toLocaleString()} · ${r.description || r.summary || ''}`,
+      });
+    }
+    for (const e of emergencyLogs.slice(0, 5)) {
+      items.push({
+        key: `em-${e.log_id}`,
+        dot: 'red',
+        title: `Emergency access — Facility ${e.facility_id || ''}`.trim(),
+        meta: `${new Date(e.access_time || e.created_at || Date.now()).toLocaleString()} · Audit ${e.blockchain_hash ? 'logged' : 'pending'}`,
+      });
+    }
+    // Sort by detected time inside meta (best-effort)
+    return items.slice(0, 6);
+  }, [prescriptions, consents, predictions, medicalRecords, emergencyLogs]);
+
+  const symptoms = useMemo(() => ([
+    'Fever', 'Headache', 'Chills',
+    'Sweating', 'Nausea', 'Vomiting',
+    'Diarrhoea', 'Cough', 'Chest pain',
+    'Fatigue', 'Rash', 'Jaundice',
+  ]), []);
+
+  const toggleSymptom = (s) => {
+    setAiSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(s)) next.delete(s);
+      else next.add(s);
+      return next;
+    });
+  };
+
+  const runAiLocal = () => {
+    const sel = [...aiSelected];
+    if (!sel.length) {
+      setAiResultHtml('<div style="font-size:13px;color:var(--color-text-secondary);text-align:center;padding:40px 0">Please select at least one symptom.</div>');
+      return;
     }
 
-    return base;
-  })();
+    const rural = aiGeo.toLowerCase().includes('rural');
+    const scores = {
+      Malaria: Math.min(0.95, (sel.includes('Fever') ? 0.35 : 0) + (sel.includes('Chills') ? 0.25 : 0) + (sel.includes('Sweating') ? 0.15 : 0) + (sel.includes('Headache') ? 0.1 : 0) + (sel.includes('Fatigue') ? 0.1 : 0) + (rural ? 0.1 : 0)),
+      Typhoid: Math.min(0.95, (sel.includes('Fever') ? 0.3 : 0) + (sel.includes('Headache') ? 0.15 : 0) + (sel.includes('Diarrhoea') ? 0.2 : 0) + (sel.includes('Nausea') ? 0.1 : 0) + (sel.includes('Fatigue') ? 0.1 : 0)),
+      Tuberculosis: Math.min(0.95, (sel.includes('Cough') ? 0.4 : 0) + (sel.includes('Fatigue') ? 0.15 : 0) + (sel.includes('Chest pain') ? 0.2 : 0) + (sel.includes('Fever') ? 0.1 : 0)),
+      'Hepatitis A': Math.min(0.95, (sel.includes('Jaundice') ? 0.45 : 0) + (sel.includes('Nausea') ? 0.15 : 0) + (sel.includes('Fatigue') ? 0.15 : 0) + (sel.includes('Fever') ? 0.1 : 0)),
+    };
+
+    const colors = { Malaria: '#BA7517', Typhoid: '#185FA5', Tuberculosis: '#A32D2D', 'Hepatitis A': '#3B6D11' };
+    const sorted = Object.entries(scores).sort((a, b) => b[1] - a[1]);
+    const top = sorted[0];
+    const topPct = Math.round(top[1] * 100);
+    const risk = topPct >= 60 ? 'High' : topPct >= 30 ? 'Moderate' : 'Low';
+    const riskCls = topPct >= 60 ? 'hcBadgeDanger' : topPct >= 30 ? 'hcBadgeWarn' : 'hcBadgeSuccess';
+
+    let html = '<div style="font-size:13px;font-weight:700;margin-bottom:12px">Diagnostic results</div>';
+    html += `<div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:14px">Rule-based expert system · Symptoms: ${sel.join(', ')}</div>`;
+    for (const [dis, sc] of sorted) {
+      const pct = Math.round(sc * 100);
+      html += `
+        <div class="hcResultBar">
+          <div class="hcResultBarLabel">
+            <span style="font-size:13px;font-weight:700">${dis}</span>
+            <span style="font-weight:700">${pct}%</span>
+          </div>
+          <div class="hcBarTrack">
+            <div class="hcBarFill" style="width:${pct}%;background:${colors[dis] || '#185FA5'}"></div>
+          </div>
+        </div>
+      `;
+    }
+    html += `
+      <div style="margin-top:14px;padding-top:14px;border-top:0.5px solid var(--color-border-tertiary)">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span class="hcBadgePill ${riskCls}">${risk} risk</span>
+          <span style="font-size:12px;color:var(--color-text-secondary)">Primary: ${top[0]}</span>
+        </div>
+        <div style="font-size:12px;color:var(--color-text-secondary);line-height:1.6">
+          This is a rule-based suggestion only. Clinical confirmation and laboratory testing are required before any diagnosis or treatment.
+        </div>
+      </div>
+    `;
+
+    setAiResultHtml(html);
+  };
+
+  const markDispensed = async (prescriptionId) => {
+    try {
+      await api.put(`/prescriptions/${prescriptionId}/dispense?token=${token}`);
+      await fetchUserData();
+    } catch (e) {
+      console.error(e);
+      setError('Failed to mark prescription as dispensed (check role permissions and backend).');
+    }
+  };
+
+  const toggleConsent = async (consent) => {
+    // If already given, revoke via endpoint. If not given, we can't "grant" without a provider_id and consent_type.
+    try {
+      if (consent?.consent_given) {
+        await api.put(`/consent/${consent.consent_id}/revoke?token=${token}`);
+        await fetchUserData();
+      }
+    } catch (e) {
+      console.error(e);
+      setError('Failed to update consent. (Granting new consent requires a dedicated form; revoking requires patient ownership.)');
+    }
+  };
+
+  const requestEmergencyAccess = async () => {
+    try {
+      if (!patient?.patient_id) {
+        setError('Emergency access requires a patient context.');
+        return;
+      }
+      await api.post(`/emergency-access/?token=${token}`, {
+        patient_id: patient.patient_id,
+        provider_id: user?.user_id,
+        facility_id: 1,
+        access_reason: `[${emergencyFacility}] ${emergencyClinicianId ? `Clinician ${emergencyClinicianId}: ` : ''}${emergencyReason} (window: ${emergencyWindow})`,
+      });
+      await fetchUserData();
+    } catch (e) {
+      console.error(e);
+      setError('Failed to request emergency access. This endpoint requires a doctor/nurse/admin token.');
+    }
+  };
 
   if (loading) {
     return (
-      <div className="dashboard-container">
-        <div className="loading">Loading your dashboard...</div>
+      <div className="hcApp">
+        <div className="hcLoading">
+          <div className="hcLoadingSpinner" />
+          <div>Loading your dashboard…</div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="dashboard-container">
-      {/* Header */}
-      <header className="dashboard-header">
-        <div className="header-left">
-          <div className="brand">
-            <div className="brand-mark" aria-hidden="true">CH</div>
-            <div className="brand-text">
-              <h1>CHENGETO HealthConnect</h1>
-              <p className="user-role">{user?.user_type?.toUpperCase() || 'USER'}</p>
-            </div>
+    <div className="hcApp">
+      <nav className="hcSidebar">
+        <div className="hcLogo">
+          <div className="hcLogoIcon">CH</div>
+          <div>
+            <div className="hcLogoText">CHENGETO</div>
+            <div className="hcLogoSub">HealthConnect</div>
           </div>
         </div>
-        <div className="header-right">
-          <div className="header-meta">
-            <div className="meta-item">
-              <div className="meta-label">Signed in</div>
-              <div className="meta-value">{email}</div>
-            </div>
-            <div className="meta-item">
-              <div className="meta-label">API</div>
-              <div className="meta-value">{apiBaseUrl.replace(/^https?:\/\//, '')}</div>
-            </div>
-          </div>
-          <button onClick={fetchUserData} className="ghost-btn" type="button">Refresh</button>
-          <button onClick={handleLogout} className="logout-btn" type="button">Logout</button>
-        </div>
-      </header>
 
-      {/* Main Content */}
-      <div className="dashboard-content">
-        {/* Sidebar */}
-        <aside className="sidebar">
-          <nav>
-            {tabs.map(t => (
-              <button
-                key={t.id}
-                className={activeTab === t.id ? 'nav-btn active' : 'nav-btn'}
-                onClick={() => setActiveTab(t.id)}
-                type="button"
-              >
-                <span className="nav-icon" aria-hidden="true">{t.icon}</span>
-                <span>{t.label}</span>
+        <div className="hcNavSection">Patient</div>
+        <button type="button" className={`hcNavItem ${activePage === 'dashboard' ? 'hcNavItemActive' : ''}`} onClick={() => setActivePage('dashboard')}>
+          <span className="hcNavIcon">⊞</span>Dashboard
+        </button>
+        <button type="button" className={`hcNavItem ${activePage === 'records' ? 'hcNavItemActive' : ''}`} onClick={() => setActivePage('records')}>
+          <span className="hcNavIcon">◧</span>Medical records
+        </button>
+        <button type="button" className={`hcNavItem ${activePage === 'prescriptions' ? 'hcNavItemActive' : ''}`} onClick={() => setActivePage('prescriptions')}>
+          <span className="hcNavIcon">⊕</span>Prescriptions
+        </button>
+        <button type="button" className={`hcNavItem ${activePage === 'consent' ? 'hcNavItemActive' : ''}`} onClick={() => setActivePage('consent')}>
+          <span className="hcNavIcon">◉</span>Consent manager
+        </button>
+
+        <div className="hcNavSection">Clinical</div>
+        <button type="button" className={`hcNavItem ${activePage === 'ai' ? 'hcNavItemActive' : ''}`} onClick={() => setActivePage('ai')}>
+          <span className="hcNavIcon">◈</span>AI diagnostics
+        </button>
+        <button type="button" className={`hcNavItem ${activePage === 'blockchain' ? 'hcNavItemActive' : ''}`} onClick={() => setActivePage('blockchain')}>
+          <span className="hcNavIcon">⛓</span>Blockchain audit
+        </button>
+
+        <div className="hcNavSection">Admin</div>
+        <button type="button" className={`hcNavItem ${activePage === 'emergency' ? 'hcNavItemActive' : ''}`} onClick={() => setActivePage('emergency')}>
+          <span className="hcNavIcon">⚡</span>Emergency access
+        </button>
+      </nav>
+
+      <div className="hcMain">
+        <div className="hcTopbar">
+          <span className="hcTopbarTitle">{pageTitles[activePage] || 'Dashboard'}</span>
+          <div className="hcTopbarRight">
+            <span className="hcBadgePill hcBadgeSuccess">System online</span>
+            <span className="hcBadgePill hcBadgeInfo">Phase 1</span>
+            <button type="button" className="hcBtn" onClick={fetchUserData}>Refresh</button>
+            <button type="button" className="hcBtn" onClick={handleLogout}>Logout</button>
+            <div className="hcAvatar" title={email || ''}>{avatarText}</div>
+          </div>
+        </div>
+
+        <div className="hcContent">
+          {error ? <div className="hcErrorBox">{error}</div> : null}
+
+          {/* DASHBOARD */}
+          {activePage === 'dashboard' && (
+            <div>
+              <div className="hcGrid4" style={{ marginBottom: 20 }}>
+                <div className="hcCard">
+                  <div className="hcCardTitle">Medical records</div>
+                  <div className="hcCardValue">{statValue(medicalRecords.length)}</div>
+                  <div className="hcCardSub">{facilitiesCount ? `${facilitiesCount} facilities` : '—'}</div>
+                </div>
+                <div className="hcCard">
+                  <div className="hcCardTitle">Active consents</div>
+                  <div className="hcCardValue">{statValue(activeConsents)}</div>
+                  <div className="hcCardSub">{expiringSoonConsents ? `${expiringSoonConsents} expiring soon` : '—'}</div>
+                </div>
+                <div className="hcCard">
+                  <div className="hcCardTitle">Prescriptions</div>
+                  <div className="hcCardValue">{statValue(prescriptions.length)}</div>
+                  <div className="hcCardSub">{pendingPrescriptions ? `${pendingPrescriptions} pending dispensing` : '—'}</div>
+                </div>
+                <div className="hcCard">
+                  <div className="hcCardTitle">Blockchain blocks</div>
+                  <div className="hcCardValue">{statValue(blockchainStatus?.total_blocks)}</div>
+                  <div className="hcCardSub">
+                    {blockchainStatus?.chain_valid ? 'Chain valid ✓' : blockchainStatus?.status ? 'Check chain' : '—'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="hcGrid2">
+                <div>
+                  <div className="hcSectionHdr"><h2>Recent activity</h2></div>
+                  <div className="hcCard" style={{ padding: '4px 20px' }}>
+                    <div className="hcTimeline">
+                      {recentActivity.length ? recentActivity.map(item => (
+                        <div key={item.key} className="hcTlItem">
+                          <div className={`hcTlDot ${item.dot === 'green' ? 'hcDotGreen' : item.dot === 'amber' ? 'hcDotAmber' : item.dot === 'red' ? 'hcDotRed' : 'hcDotBlue'}`} />
+                          <div style={{ flex: 1 }}>
+                            <div className="hcTlTitle">{item.title}</div>
+                            <div className="hcTlMeta">{item.meta}</div>
+                          </div>
+                        </div>
+                      )) : (
+                        <div className="hcTlItem">
+                          <div className="hcTlDot hcDotBlue" />
+                          <div style={{ flex: 1 }}>
+                            <div className="hcTlTitle">No recent activity yet</div>
+                            <div className="hcTlMeta">Create a record, consent, prescription, or AI prediction to see updates here.</div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="hcSectionHdr"><h2>Patient profile</h2></div>
+                  <div className="hcCard">
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 16 }}>
+                      <div className="hcAvatar" style={{ width: 48, height: 48, fontSize: 16 }}>
+                        {patient?.first_name?.[0] || 'H'}{patient?.last_name?.[0] || 'C'}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 15, fontWeight: 700 }}>
+                          {patient ? `${patient.first_name} ${patient.last_name}` : (email || 'User')}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                          Patient ID: {patient?.patient_id ?? '—'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="hcSep" style={{ margin: '0 0 12px' }} />
+
+                    <div className="hcProfileGrid">
+                      <span className="hcMuted">DOB</span><span>{patient?.date_of_birth || '—'}</span>
+                      <span className="hcMuted">Blood type</span><span>{patient?.blood_type || '—'}</span>
+                      <span className="hcMuted">Allergies</span><span>{patient?.allergies || '—'}</span>
+                      <span className="hcMuted">Primary facility</span><span>{patient?.city ? `${patient.city}` : '—'}</span>
+                      <span className="hcMuted">Last visit</span><span>—</span>
+                    </div>
+
+                    <div className="hcSep" />
+                    <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                      Emergency contact: —{/* placeholder */}
+                    </div>
+                  </div>
+
+                  <div className="hcSectionHdr" style={{ marginTop: 16 }}><h2>Vital signs</h2></div>
+                  <div className="hcCard">
+                    <div className="hcVitalGrid">
+                      <div className="hcVitalCard">
+                        <div className="hcVitalLbl">Blood pressure</div>
+                        <div className="hcVitalVal">
+                          {latestVitals?.blood_pressure || latestVitals?.bp || '—'} <span className="hcVitalUnit">mmHg</span>
+                        </div>
+                      </div>
+                      <div className="hcVitalCard">
+                        <div className="hcVitalLbl">Temperature</div>
+                        <div className="hcVitalVal">
+                          {latestVitals?.temperature ?? '—'} <span className="hcVitalUnit">°C</span>
+                        </div>
+                      </div>
+                      <div className="hcVitalCard">
+                        <div className="hcVitalLbl">Heart rate</div>
+                        <div className="hcVitalVal">
+                          {latestVitals?.heart_rate ?? '—'} <span className="hcVitalUnit">bpm</span>
+                        </div>
+                      </div>
+                      <div className="hcVitalCard">
+                        <div className="hcVitalLbl">O₂ saturation</div>
+                        <div className="hcVitalVal">
+                          {latestVitals?.oxygen_saturation ?? latestVitals?.spo2 ?? '—'} <span className="hcVitalUnit">%</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* RECORDS */}
+          {activePage === 'records' && (
+            <div>
+              <div className="hcSectionHdr">
+                <h2>Medical records</h2>
+                <button type="button" className="hcBtn hcBtnPrimary" onClick={() => setActivePage('dashboard')}>Back to dashboard</button>
+              </div>
+              <div className="hcTableWrap">
+                <table className="hcTable">
+                  <thead>
+                    <tr>
+                      <th className="hcTh">Date</th>
+                      <th className="hcTh">Type</th>
+                      <th className="hcTh">Facility</th>
+                      <th className="hcTh">Provider</th>
+                      <th className="hcTh">Summary</th>
+                      <th className="hcTh">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {medicalRecords.length ? medicalRecords.map((r, idx) => (
+                      <tr className="hcTr" key={r.record_id || r.medical_record_id || idx}>
+                        <td className="hcTd">{r.record_date || r.created_at || '—'}</td>
+                        <td className="hcTd">{r.record_type || '—'}</td>
+                        <td className="hcTd">{r.facility_name || r.facility_id || '—'}</td>
+                        <td className="hcTd">{r.provider_name || r.provider_id || '—'}</td>
+                        <td className="hcTd">{r.description || r.summary || '—'}</td>
+                        <td className="hcTd"><span className="hcBadgePill hcBadgeSuccess">Verified</span></td>
+                      </tr>
+                    )) : (
+                      <tr className="hcTr"><td className="hcTd" colSpan={6}>No medical records found for this patient.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* PRESCRIPTIONS */}
+          {activePage === 'prescriptions' && (
+            <div>
+              <div className="hcSectionHdr">
+                <h2>Prescriptions</h2>
+                <button type="button" className="hcBtn hcBtnPrimary" onClick={fetchUserData}>Refresh</button>
+              </div>
+              {prescriptions.length ? prescriptions.map(rx => (
+                <div className="hcRxCard" key={rx.prescription_id}>
+                  <div className="hcRxHdr">
+                    <div>
+                      <div className="hcRxDrug">{rx.medication_name}</div>
+                      <div className="hcRxDetail">{rx.dosage} · {rx.frequency} · {rx.duration}</div>
+                      <div className="hcRxDetail">Issued: Provider {rx.provider_id} · {new Date(rx.prescription_date).toLocaleDateString()}</div>
+                    </div>
+                    <span className={`hcBadgePill ${rx.is_dispensed ? 'hcBadgeSuccess' : 'hcBadgeWarn'}`}>{rx.is_dispensed ? 'Dispensed' : 'Pending'}</span>
+                  </div>
+                  <div className="hcRxFooter">
+                    <span className="hcHash">{rx.blockchain_token ? String(rx.blockchain_token).slice(0, 18) : '—'}</span>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button type="button" className="hcBtn" onClick={() => setActivePage('blockchain')}>View token</button>
+                      {!rx.is_dispensed && (
+                        <button type="button" className="hcBtn hcBtnPrimary" onClick={() => markDispensed(rx.prescription_id)}>Mark dispensed</button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )) : (
+                <div className="hcCard">No prescriptions found.</div>
+              )}
+            </div>
+          )}
+
+          {/* CONSENT */}
+          {activePage === 'consent' && (
+            <div>
+              <div className="hcSectionHdr">
+                <h2>Consent manager</h2>
+                <button type="button" className="hcBtn" onClick={() => setActivePage('dashboard')}>Back</button>
+              </div>
+              <div className="hcCard" style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 14, lineHeight: 1.6 }}>
+                  You control who can access your health data. Consents are recorded and can be verified.
+                </div>
+                {consents.length ? consents.map(c => (
+                  <div className="hcConsentRow" key={c.consent_id}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700 }}>Provider {c.provider_id}</div>
+                      <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>
+                        {c.consent_type || 'Access'} · {c.valid_until ? `Expires ${c.valid_until}` : 'Permanent'}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className={`hcToggle ${c.consent_given ? 'hcToggleOn' : 'hcToggleOff'}`}
+                      onClick={() => toggleConsent(c)}
+                      title={c.consent_given ? 'Revoke consent' : 'Granting requires a consent form'}
+                    />
+                  </div>
+                )) : (
+                  <div className="hcConsentRow" style={{ borderBottom: 'none' }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700 }}>No consent records</div>
+                      <div style={{ fontSize: 12, color: 'var(--color-text-secondary)' }}>Create consent entries via your consent endpoint.</div>
+                    </div>
+                    <button type="button" className="hcToggle hcToggleOff" disabled />
+                  </div>
+                )}
+              </div>
+              <button type="button" className="hcBtn hcBtnPrimary" disabled title="Add a Grant Consent form next">
+                Grant new consent
               </button>
-            ))}
-          </nav>
-
-          <div className="sidebar-footer">
-            <div className="sidebar-note">
-              <div className="sidebar-note-title">Prototype dashboard</div>
-              <div className="sidebar-note-body">
-                This is a working UI that reads from your FastAPI backend. Add <code>REACT_APP_API_URL</code> if your API isn’t on localhost.
-              </div>
-            </div>
-          </div>
-        </aside>
-
-        {/* Main Panel */}
-        <main className="main-panel">
-          {error && (
-            <div className="banner banner-error" role="alert">
-              <div className="banner-title">Dashboard error</div>
-              <div className="banner-body">{error}</div>
             </div>
           )}
 
-          {activeTab === 'overview' && (
-            <div className="tab-content">
-              <div className="page-head">
+          {/* AI */}
+          {activePage === 'ai' && (
+            <div>
+              <div className="hcSectionHdr"><h2>AI diagnostic support</h2></div>
+              <div className="hcGrid2">
                 <div>
-                  <h2>Dashboard</h2>
-                  <p className="page-subtitle">
-                    Welcome, {patient?.first_name || user?.email || 'User'}.
-                    {' '}
-                    Here’s what’s happening in your health profile and verification layer.
-                  </p>
-                </div>
-                <div className="page-actions">
-                  <button className="primary-btn" onClick={() => setActiveTab('blockchain')} type="button">
-                    Verify integrity
-                  </button>
-                </div>
-              </div>
-              
-              <div className="stats-grid">
-                <div className="stat-card">
-                  <div className="stat-number">{statValue(predictions.length)}</div>
-                  <div className="stat-label">AI Predictions</div>
-                </div>
-                <div className="stat-card">
-                  <div className="stat-number">{statValue(prescriptions.length)}</div>
-                  <div className="stat-label">Prescriptions</div>
-                </div>
-                <div className="stat-card">
-                  <div className="stat-number">{statValue(pendingPrescriptions)}</div>
-                  <div className="stat-label">Pending</div>
-                </div>
-                <div className="stat-card accent">
-                  <div className="stat-number">{statValue(blockchainStatus?.total_blocks)}</div>
-                  <div className="stat-label">Blockchain Blocks</div>
-                </div>
-              </div>
-
-              <div className="grid-2">
-                <section className="panel">
-                  <div className="panel-head">
-                    <h3>Verification status</h3>
-                    <div className={`pill ${blockchainStatus?.status === 'valid' ? 'pill-ok' : blockchainStatus?.status ? 'pill-warn' : 'pill-neutral'}`}>
-                      {blockchainStatus?.status ? String(blockchainStatus.status).toUpperCase() : 'UNKNOWN'}
+                  <div className="hcCard">
+                    <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Select presenting symptoms</div>
+                    <div className="hcAiSymptomGrid">
+                      {symptoms.map(s => (
+                        <button
+                          key={s}
+                          type="button"
+                          className={`hcChip ${aiSelected.has(s) ? 'hcChipSel' : ''}`}
+                          onClick={() => toggleSymptom(s)}
+                        >
+                          {s}
+                        </button>
+                      ))}
                     </div>
-                  </div>
-                  <div className="panel-body">
-                    <div className="kv">
-                      <div className="kv-item">
-                        <div className="kv-label">Chain valid</div>
-                        <div className="kv-value">{String(!!blockchainStatus?.chain_valid)}</div>
-                      </div>
-                      <div className="kv-item">
-                        <div className="kv-label">Total blocks</div>
-                        <div className="kv-value">{statValue(blockchainStatus?.total_blocks)}</div>
-                      </div>
-                      <div className="kv-item">
-                        <div className="kv-label">Latest block</div>
-                        <div className="kv-value mono">{blockchainStatus?.latest_block ? String(blockchainStatus.latest_block).slice(0, 18) + '…' : '—'}</div>
-                      </div>
-                      <div className="kv-item">
-                        <div className="kv-label">Distribution</div>
-                        <div className="kv-value">
-                          {blockchainStatus?.block_distribution
-                            ? Object.entries(blockchainStatus.block_distribution).map(([k, v]) => `${k}:${v}`).join('  ')
-                            : '—'}
-                        </div>
-                      </div>
+                    <div className="hcSep" />
+                    <div className="hcFormGroup" style={{ marginBottom: 12 }}>
+                      <label className="hcLabel">Geographic region</label>
+                      <select className="hcSelect" value={aiGeo} onChange={(e) => setAiGeo(e.target.value)}>
+                        <option>Harare (urban)</option>
+                        <option>Mashonaland Central (rural)</option>
+                        <option>Manicaland (rural)</option>
+                        <option>Matabeleland South</option>
+                      </select>
                     </div>
+                    <button type="button" className="hcBtn hcBtnPrimary" style={{ width: '100%' }} onClick={runAiLocal}>
+                      Run diagnostic analysis
+                    </button>
                   </div>
-                </section>
-
-                <section className="panel">
-                  <div className="panel-head">
-                    <h3>Prescription activity</h3>
-                    <div className="panel-subhead">Pending vs dispensed</div>
-                  </div>
-                  <div className="panel-body">
-                    <div className="mini-bars" role="img" aria-label="Prescription status chart">
-                      <div className="mini-bar">
-                        <div className="mini-bar-label">Pending</div>
-                        <div className="mini-bar-track">
-                          <div className="mini-bar-fill warn" style={{ width: `${prescriptions.length ? (pendingPrescriptions / prescriptions.length) * 100 : 0}%` }} />
-                        </div>
-                        <div className="mini-bar-value">{pendingPrescriptions}</div>
-                      </div>
-                      <div className="mini-bar">
-                        <div className="mini-bar-label">Dispensed</div>
-                        <div className="mini-bar-track">
-                          <div className="mini-bar-fill ok" style={{ width: `${prescriptions.length ? (dispensedPrescriptions / prescriptions.length) * 100 : 0}%` }} />
-                        </div>
-                        <div className="mini-bar-value">{dispensedPrescriptions}</div>
-                      </div>
-                    </div>
-                    <div className="helper">
-                      Tip: for pharmacists, use the <strong>Dispense</strong> action in your API to mark a prescription as completed.
-                    </div>
-                  </div>
-                </section>
-              </div>
-
-              <div className="grid-2">
-                <section className="panel">
-                  <div className="panel-head">
-                    <h3>Latest AI prediction</h3>
-                    <div className="panel-subhead">Most recent diagnosis and confidence</div>
-                  </div>
-                  <div className="panel-body">
-                    {predictions.length > 0 ? (
-                      <div className="prediction-highlight">
-                        <div className="prediction-disease">{predictions[0].predicted_condition}</div>
-                        <div className="prediction-confidence">Confidence: {predictions[0].confidence_score}%</div>
-                        <div className="prediction-date">{new Date(predictions[0].prediction_date).toLocaleString()}</div>
-                      </div>
+                </div>
+                <div>
+                  <div className="hcCard">
+                    {aiResultHtml ? (
+                      <div dangerouslySetInnerHTML={{ __html: aiResultHtml }} />
                     ) : (
-                      <div className="empty-card">No AI predictions yet.</div>
+                      <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', textAlign: 'center', padding: '40px 0' }}>
+                        Select symptoms and run analysis to see results
+                      </div>
                     )}
                   </div>
-                </section>
-
-                <section className="panel">
-                  <div className="panel-head">
-                    <h3>Latest prescription</h3>
-                    <div className="panel-subhead">Most recent medication and status</div>
-                  </div>
-                  <div className="panel-body">
-                    {prescriptions.length > 0 ? (
-                      <div className="rx-highlight">
-                        <div className="rx-name">{prescriptions[0].medication_name}</div>
-                        <div className="rx-meta">
-                          <span className={`status-badge ${prescriptions[0].is_dispensed ? 'dispensed' : 'pending'}`}>
-                            {prescriptions[0].is_dispensed ? 'Dispensed' : 'Pending'}
-                          </span>
-                          <span className="rx-date">{new Date(prescriptions[0].prescription_date).toLocaleDateString()}</span>
-                        </div>
-                        <div className="rx-details">
-                          <div><strong>Dosage:</strong> {prescriptions[0].dosage}</div>
-                          <div><strong>Frequency:</strong> {prescriptions[0].frequency}</div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="empty-card">No prescriptions yet.</div>
-                    )}
-                  </div>
-                </section>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'profile' && patient && (
-            <div className="tab-content">
-              <h2>Patient Profile</h2>
-              <div className="profile-grid">
-                <div className="profile-item">
-                  <label>Full Name</label>
-                  <div>{patient.first_name} {patient.last_name}</div>
-                </div>
-                <div className="profile-item">
-                  <label>Date of Birth</label>
-                  <div>{patient.date_of_birth}</div>
-                </div>
-                <div className="profile-item">
-                  <label>Gender</label>
-                  <div>{patient.gender}</div>
-                </div>
-                <div className="profile-item">
-                  <label>Blood Type</label>
-                  <div>{patient.blood_type || 'Not specified'}</div>
-                </div>
-                <div className="profile-item">
-                  <label>Phone</label>
-                  <div>{patient.phone_number}</div>
-                </div>
-                <div className="profile-item">
-                  <label>City</label>
-                  <div>{patient.city}</div>
-                </div>
-                <div className="profile-item full-width">
-                  <label>Allergies</label>
-                  <div>{patient.allergies || 'None'}</div>
-                </div>
-                <div className="profile-item full-width">
-                  <label>Chronic Conditions</label>
-                  <div>{patient.chronic_conditions || 'None'}</div>
                 </div>
               </div>
             </div>
           )}
 
-          {activeTab === 'predictions' && (
-            <div className="tab-content">
-              <h2>AI Disease Predictions</h2>
-              {predictions.length === 0 ? (
-                <p className="empty-state">No AI predictions yet.</p>
-              ) : (
-                <div className="predictions-list">
-                  {predictions.map(pred => (
-                    <div key={pred.prediction_id} className="prediction-card">
-                      <div className="prediction-header">
-                        <span className="disease-name">{pred.predicted_condition}</span>
-                        <span className={`confidence-badge ${pred.confidence_score >= 80 ? 'high' : pred.confidence_score >= 60 ? 'medium' : 'low'}`}>
-                          {pred.confidence_score}% confidence
-                        </span>
-                      </div>
-                      <div className="prediction-body">
-                        <p><strong>Symptoms:</strong> {pred.symptoms}</p>
-                        <p><strong>AI Model:</strong> {pred.ai_model_version}</p>
-                        <p><strong>Date:</strong> {new Date(pred.prediction_date).toLocaleString()}</p>
-                      </div>
+          {/* BLOCKCHAIN */}
+          {activePage === 'blockchain' && (
+            <div>
+              <div className="hcSectionHdr">
+                <h2>Blockchain audit trail</h2>
+                <span className={`hcBadgePill ${blockchainStatus?.chain_valid ? 'hcBadgeSuccess' : 'hcBadgeWarn'}`}>{blockchainStatus?.chain_valid ? 'Chain valid' : 'Check chain'}</span>
+              </div>
+
+              <div className="hcCard" style={{ marginBottom: 16 }}>
+                <div className="hcGrid3" style={{ textAlign: 'center' }}>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>Total blocks</div>
+                    <div style={{ fontSize: 20, fontWeight: 700 }}>{statValue(blockchainStatus?.total_blocks)}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>Hash algorithm</div>
+                    <div style={{ fontSize: 20, fontWeight: 700 }}>SHA-256</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--color-text-secondary)' }}>Chain integrity</div>
+                    <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--color-text-success)' }}>
+                      {blockchainStatus?.chain_valid ? '100%' : '—'}
                     </div>
-                  ))}
+                  </div>
                 </div>
+              </div>
+
+              {blockchainBlocks?.length ? blockchainBlocks.slice(-3).reverse().map(b => (
+                <div key={b.block_index} className="hcCard" style={{ marginBottom: 8, fontSize: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <span style={{ fontWeight: 700, fontSize: 13 }}>Block #{b.block_index}</span>
+                    <span className="hcVerified">✓ Verified</span>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px', color: 'var(--color-text-secondary)' }}>
+                    <span style={{ fontWeight: 700, color: 'var(--color-text-primary)' }}>Event</span>
+                    <span>{b.block_type} · record {b.record_id}</span>
+                    <span style={{ fontWeight: 700, color: 'var(--color-text-primary)' }}>Timestamp</span>
+                    <span>{b.timestamp}</span>
+                    <span style={{ fontWeight: 700, color: 'var(--color-text-primary)' }}>Block hash</span>
+                    <span><span className="hcHash">{String(b.block_hash).slice(0, 32)}</span></span>
+                    <span style={{ fontWeight: 700, color: 'var(--color-text-primary)' }}>Prev hash</span>
+                    <span><span className="hcHash">{String(b.previous_hash).slice(0, 32)}</span></span>
+                  </div>
+                </div>
+              )) : (
+                <div className="hcCard">No blockchain blocks found yet.</div>
               )}
             </div>
           )}
 
-          {activeTab === 'prescriptions' && (
-            <div className="tab-content">
-              <h2>My Prescriptions</h2>
-              {prescriptions.length === 0 ? (
-                <p className="empty-state">No prescriptions yet.</p>
-              ) : (
-                <div className="prescriptions-list">
-                  {prescriptions.map(rx => (
-                    <div key={rx.prescription_id} className="prescription-card">
-                      <div className="prescription-header">
-                        <span className="medication-name">{rx.medication_name}</span>
-                        <span className={`status-badge ${rx.is_dispensed ? 'dispensed' : 'pending'}`}>
-                          {rx.is_dispensed ? 'Dispensed' : 'Pending'}
-                        </span>
-                      </div>
-                      <div className="prescription-body">
-                        <p><strong>Dosage:</strong> {rx.dosage}</p>
-                        <p><strong>Frequency:</strong> {rx.frequency}</p>
-                        <p><strong>Duration:</strong> {rx.duration}</p>
-                        {rx.instructions && <p><strong>Instructions:</strong> {rx.instructions}</p>}
-                        <p><strong>Date:</strong> {new Date(rx.prescription_date).toLocaleDateString()}</p>
-                        <p className="blockchain-token"><strong>Blockchain Token:</strong> {rx.blockchain_token}</p>
-                      </div>
-                    </div>
-                  ))}
+          {/* EMERGENCY */}
+          {activePage === 'emergency' && (
+            <div>
+              <div className="hcSectionHdr"><h2>Emergency access protocol</h2></div>
+              <div className="hcCard" style={{ borderColor: 'rgba(239, 68, 68, 0.35)', marginBottom: 16 }}>
+                <div style={{ fontSize: 13, color: 'var(--color-text-danger)', fontWeight: 700, marginBottom: 8 }}>
+                  ⚡ Emergency access bypasses normal consent — all access is logged immutably
                 </div>
-              )}
-            </div>
-          )}
-
-          {activeTab === 'blockchain' && (
-            <div className="tab-content">
-              <div className="page-head">
-                <div>
-                  <h2>Blockchain Verification</h2>
-                  <p className="page-subtitle">Verify integrity of consent, prescriptions, and emergency access audit trail.</p>
-                </div>
-                <div className="page-actions">
-                  <button className="primary-btn" onClick={fetchUserData} type="button">Re-verify</button>
+                <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', lineHeight: 1.6 }}>
+                  Use only when the patient is unconscious or unable to provide consent. This endpoint requires doctor/nurse/admin.
                 </div>
               </div>
 
-              <div className="panel">
-                <div className="panel-head">
-                  <h3>Chain status</h3>
-                  <div className={`pill ${blockchainStatus?.status === 'valid' ? 'pill-ok' : blockchainStatus?.status ? 'pill-warn' : 'pill-neutral'}`}>
-                    {blockchainStatus?.status ? String(blockchainStatus.status).toUpperCase() : 'UNKNOWN'}
-                  </div>
+              <div className="hcCard">
+                <div className="hcFormGroup" style={{ marginBottom: 12 }}>
+                  <label className="hcLabel">Requesting facility</label>
+                  <select className="hcSelect" value={emergencyFacility} onChange={(e) => setEmergencyFacility(e.target.value)}>
+                    <option>Chitungwiza Central Hospital</option>
+                    <option>Harare Central Hospital</option>
+                    <option>Parirenyatwa Group</option>
+                    <option>Sally Mugabe Children's Hospital</option>
+                  </select>
                 </div>
-                <div className="panel-body">
-                  {blockchainStatus ? (
-                    <div className="kv">
-                      <div className="kv-item">
-                        <div className="kv-label">Message</div>
-                        <div className="kv-value">{blockchainStatus.message || '—'}</div>
-                      </div>
-                      <div className="kv-item">
-                        <div className="kv-label">Total blocks</div>
-                        <div className="kv-value">{statValue(blockchainStatus.total_blocks)}</div>
-                      </div>
-                      <div className="kv-item">
-                        <div className="kv-label">Genesis</div>
-                        <div className="kv-value mono">{blockchainStatus.genesis_block ? String(blockchainStatus.genesis_block).slice(0, 18) + '…' : '—'}</div>
-                      </div>
-                      <div className="kv-item">
-                        <div className="kv-label">Latest</div>
-                        <div className="kv-value mono">{blockchainStatus.latest_block ? String(blockchainStatus.latest_block).slice(0, 18) + '…' : '—'}</div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="empty-card">
-                      Blockchain status not available. Make sure your backend has the <code>/blockchain/verify</code> route enabled.
-                    </div>
-                  )}
+                <div className="hcFormGroup" style={{ marginBottom: 12 }}>
+                  <label className="hcLabel">Requesting clinician ID</label>
+                  <input className="hcInput" type="text" placeholder="e.g. DOC-0091" value={emergencyClinicianId} onChange={(e) => setEmergencyClinicianId(e.target.value)} />
                 </div>
+                <div className="hcFormGroup" style={{ marginBottom: 12 }}>
+                  <label className="hcLabel">Clinical justification</label>
+                  <textarea className="hcTextarea" rows={3} placeholder="State the emergency and reason for data access..." value={emergencyReason} onChange={(e) => setEmergencyReason(e.target.value)} />
+                </div>
+                <div className="hcFormGroup" style={{ marginBottom: 16 }}>
+                  <label className="hcLabel">Access window</label>
+                  <select className="hcSelect" value={emergencyWindow} onChange={(e) => setEmergencyWindow(e.target.value)}>
+                    <option>30 minutes</option>
+                    <option>1 hour</option>
+                    <option>2 hours (maximum)</option>
+                  </select>
+                </div>
+                <button type="button" className="hcBtn" style={{ background: 'var(--color-background-danger)', color: 'var(--color-text-danger)', borderColor: 'rgba(239, 68, 68, 0.35)', width: '100%' }} onClick={requestEmergencyAccess}>
+                  Request emergency access
+                </button>
+              </div>
+
+              <div className="hcSectionHdr" style={{ marginTop: 20 }}><h2>Emergency access log</h2></div>
+              <div className="hcTableWrap">
+                <table className="hcTable">
+                  <thead>
+                    <tr>
+                      <th className="hcTh">Date/time</th>
+                      <th className="hcTh">Facility</th>
+                      <th className="hcTh">Clinician</th>
+                      <th className="hcTh">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {emergencyLogs.length ? emergencyLogs.map((l) => (
+                      <tr className="hcTr" key={l.log_id}>
+                        <td className="hcTd">{new Date(l.access_time || l.created_at || Date.now()).toLocaleString()}</td>
+                        <td className="hcTd">{l.facility_id || '—'}</td>
+                        <td className="hcTd">{l.provider_id || '—'}</td>
+                        <td className="hcTd"><span className="hcBadgePill hcBadgeInfo">Closed</span></td>
+                      </tr>
+                    )) : (
+                      <tr className="hcTr"><td className="hcTd" colSpan={4}>No emergency access logs found.</td></tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
-        </main>
+        </div>
       </div>
     </div>
   );
