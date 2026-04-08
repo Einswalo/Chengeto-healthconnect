@@ -6,6 +6,7 @@ from app.schemas.vital_sign import VitalSignCreate, VitalSignResponse
 from app.services.vital_sign_service import VitalSignService
 from app.services.auth_service import AuthService
 from app.core.access_control import require_patient_access
+from app.core.roles import CLINICAL_STAFF
 
 router = APIRouter(prefix="/vital-signs", tags=["Vital Signs"])
 
@@ -33,7 +34,7 @@ async def record_vital_signs(
     user = AuthService.get_current_user(db, token)
     
     # Only healthcare staff can record vitals
-    if user.user_type not in ["doctor", "nurse", "admin"]:
+    if user.user_type not in CLINICAL_STAFF:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only healthcare providers can record vital signs"

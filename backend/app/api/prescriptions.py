@@ -6,6 +6,7 @@ from app.schemas.prescription import PrescriptionCreate, PrescriptionResponse
 from app.services.prescription_service import PrescriptionService
 from app.services.auth_service import AuthService
 from app.core.access_control import require_patient_access
+from app.core.roles import CLINICAL_STAFF, DISPENSERS
 
 router = APIRouter(prefix="/prescriptions", tags=["Prescriptions"])
 
@@ -38,7 +39,7 @@ async def create_prescription(
     user = AuthService.get_current_user(db, token)
     
     # Only doctors, nurses, and admins can prescribe
-    if user.user_type not in ["doctor", "nurse", "admin"]:
+    if user.user_type not in CLINICAL_STAFF:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only healthcare providers can create prescriptions"
@@ -92,7 +93,7 @@ async def mark_prescription_dispensed(
     user = AuthService.get_current_user(db, token)
     
     # Only pharmacists and admins can dispense
-    if user.user_type not in ["pharmacist", "admin"]:
+    if user.user_type not in DISPENSERS:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only pharmacists can dispense prescriptions"

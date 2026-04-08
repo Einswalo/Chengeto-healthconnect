@@ -6,6 +6,7 @@ from app.schemas.medical_record import MedicalRecordCreate, MedicalRecordUpdate,
 from app.services.medical_record_service import MedicalRecordService
 from app.services.auth_service import AuthService
 from app.core.access_control import require_patient_access
+from app.core.roles import CLINICAL_STAFF
 
 router = APIRouter(prefix="/medical-records", tags=["Medical Records"])
 
@@ -30,7 +31,7 @@ async def create_medical_record(
     user = AuthService.get_current_user(db, token)
     
     # Only doctors, nurses, and admins can create records
-    if user.user_type not in ["doctor", "nurse", "admin"]:
+    if user.user_type not in CLINICAL_STAFF:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only healthcare providers can create medical records"
@@ -84,7 +85,7 @@ async def update_medical_record(
     Requires: JWT token (doctor/nurse/admin)
     """
     user = AuthService.get_current_user(db, token)
-    if user.user_type not in ["doctor", "nurse", "admin"]:
+    if user.user_type not in CLINICAL_STAFF:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only healthcare providers can update medical records"

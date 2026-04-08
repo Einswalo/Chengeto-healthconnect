@@ -6,6 +6,7 @@ from app.schemas.ai_prediction import AIPredictionCreate, AIPredictionResponse
 from app.services.ai_service import AIService
 from app.services.auth_service import AuthService
 from app.core.access_control import require_patient_access
+from app.core.roles import CLINICAL_STAFF
 
 router = APIRouter(prefix="/ai", tags=["AI Disease Prediction"])
 
@@ -37,7 +38,7 @@ async def predict_disease(
     user = AuthService.get_current_user(db, token)
     
     # Only healthcare providers can request AI predictions
-    if user.user_type not in ["doctor", "nurse", "admin"]:
+    if user.user_type not in CLINICAL_STAFF:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only healthcare providers can request AI predictions"

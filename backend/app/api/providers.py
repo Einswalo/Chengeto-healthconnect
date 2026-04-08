@@ -5,6 +5,7 @@ from app.schemas.healthcare_provider import HealthcareProviderCreate, Healthcare
 from app.schemas.auth import UserRegister
 from app.services.healthcare_provider_service import HealthcareProviderService
 from app.services.auth_service import AuthService
+from app.core.roles import ADMIN_ONLY
 
 router = APIRouter(prefix="/providers", tags=["Healthcare Providers"])
 
