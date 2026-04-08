@@ -2,11 +2,13 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import './Login.css';
 
-function Login() {
+function Login({ onGoToRegister }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const apiBaseUrl = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -14,7 +16,7 @@ function Login() {
     setLoading(true);
 
     try {
-      const response = await axios.post('http://localhost:8000/auth/login', {
+      const response = await axios.post(`${apiBaseUrl}/auth/login`, {
         email: email,
         password: password
       });
@@ -23,8 +25,6 @@ function Login() {
       localStorage.setItem('token', response.data.access_token);
       localStorage.setItem('email', email);
       
-     // Success! Redirect to dashboard
-      alert('Login successful!');
       window.location.reload();
              // This will trigger App.js to show Dashboard
 
@@ -75,6 +75,13 @@ function Login() {
         </form>
 
         <div className="login-footer">
+          <button
+            type="button"
+            className="link-button"
+            onClick={onGoToRegister}
+          >
+            Create a patient account
+          </button>
           <p>Test Accounts:</p>
           <p>Doctor: drchim@chengeto.com / password123</p>
           <p>Patient: hussein@chengeto.com / password123</p>

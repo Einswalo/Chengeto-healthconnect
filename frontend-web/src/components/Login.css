@@ -161,6 +161,21 @@
   font-size: 13px;
 }
 
+.link-button {
+  width: 100%;
+  text-align: center;
+  background: transparent;
+  border: none;
+  color: #1F4788;
+  font-weight: 700;
+  padding: 10px 0 18px;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
 .login-footer p {
   margin: 8px 0;
   color: #666;
