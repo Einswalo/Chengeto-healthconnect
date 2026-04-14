@@ -14,6 +14,15 @@ class PrescriptionService:
     @staticmethod
     def create_prescription(db: Session, prescription_data: PrescriptionCreate) -> Prescription:
         """Create a new prescription with blockchain verification"""
+
+        # Convert string date to date object
+        try:
+            rx_date = datetime.strptime(prescription_data.prescription_date, "%Y-%m-%d").date()
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid prescription_date format (expected YYYY-MM-DD): {e}"
+            )
         
         # Create prescription
         new_prescription = Prescription(
@@ -25,6 +34,7 @@ class PrescriptionService:
             frequency=prescription_data.frequency,
             duration=prescription_data.duration,
             instructions=prescription_data.instructions,
+            prescription_date=rx_date,
             is_dispensed=False
         )
         
