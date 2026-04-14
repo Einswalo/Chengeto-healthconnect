@@ -27,6 +27,7 @@ async def create_appointment(
     """
     # Verify user is authenticated
     user = AuthService.get_current_user(db, token)
+    require_patient_access(db, user=user, patient_id=appointment_data.patient_id)
     
     appointment = AppointmentService.create_appointment(db, appointment_data)
     return appointment
@@ -44,6 +45,7 @@ async def get_appointment(
     """
     user = AuthService.get_current_user(db, token)
     appointment = AppointmentService.get_appointment_by_id(db, appointment_id)
+    require_patient_access(db, user=user, patient_id=appointment.patient_id)
     return appointment
 
 @router.get("/patient/{patient_id}", response_model=List[AppointmentResponse])
@@ -75,6 +77,8 @@ async def update_appointment(
     Requires: JWT token
     """
     user = AuthService.get_current_user(db, token)
+    existing = AppointmentService.get_appointment_by_id(db, appointment_id)
+    require_patient_access(db, user=user, patient_id=existing.patient_id)
     appointment = AppointmentService.update_appointment(db, appointment_id, appointment_data)
     return appointment
 
@@ -90,5 +94,7 @@ async def cancel_appointment(
     Requires: JWT token
     """
     user = AuthService.get_current_user(db, token)
+    existing = AppointmentService.get_appointment_by_id(db, appointment_id)
+    require_patient_access(db, user=user, patient_id=existing.patient_id)
     appointment = AppointmentService.cancel_appointment(db, appointment_id)
     return appointment

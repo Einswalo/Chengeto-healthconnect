@@ -48,6 +48,47 @@ function Dashboard() {
     record_id: '',
   });
 
+  const [appointments, setAppointments] = useState([]);
+  const [newAppointment, setNewAppointment] = useState({
+    appointment_date: new Date().toISOString().slice(0, 10),
+    appointment_time: '09:00',
+    facility_id: '',
+    reason: '',
+    notes: '',
+  });
+
+  const [facilities, setFacilities] = useState([]);
+  const [facilityFilters, setFacilityFilters] = useState({ facility_type: '', city: '' });
+  const [newFacility, setNewFacility] = useState({
+    facility_name: '',
+    facility_type: 'Hospital',
+    address: '',
+    city: '',
+    phone_number: '',
+    email: '',
+  });
+
+  const [providersList, setProvidersList] = useState([]);
+  const [newProvider, setNewProvider] = useState({
+    email: '',
+    password: '',
+    user_type: 'doctor',
+    first_name: '',
+    last_name: '',
+    provider_type: 'Doctor',
+    specialization: '',
+    license_number: '',
+    phone_number: '',
+  });
+
+  const [grantConsent, setGrantConsent] = useState({
+    provider_id: '',
+    facility_id: '',
+    consent_type: 'Full Access',
+    valid_from: new Date().toISOString().slice(0, 10),
+    valid_until: '',
+  });
+
   const token = localStorage.getItem('token');
   const email = localStorage.getItem('email');
 
@@ -76,12 +117,15 @@ function Dashboard() {
 
   const pageTitles = useMemo(() => ({
     dashboard: 'Dashboard',
+    appointments: 'Appointments',
     records: 'Medical records',
     prescriptions: 'Prescriptions',
     consent: 'Consent manager',
     ai: 'AI diagnostics',
     blockchain: 'Blockchain audit',
     emergency: 'Emergency access',
+    facilities: 'Facilities',
+    providers: 'Healthcare providers',
   }), []);
 
   const avatarText = useMemo(() => {
@@ -132,6 +176,7 @@ function Dashboard() {
           emergencyResponse,
           vitalResponse,
           medicalRecordsResponse,
+          appointmentsResponse,
         ] = await Promise.allSettled([
           api.get(`/ai/predictions/patient/${patientId}?token=${token}`),
           api.get(`/prescriptions/patient/${patientId}?token=${token}`),
@@ -139,6 +184,7 @@ function Dashboard() {
           api.get(`/emergency-access/patient/${patientId}?token=${token}`),
           api.get(`/vital-signs/patient/${patientId}?token=${token}`),
           api.get(`/medical-records/patient/${patientId}?token=${token}`),
+          api.get(`/appointments/patient/${patientId}?token=${token}`),
         ]);
 
         setPredictions(predictionsResponse.status === 'fulfilled' && Array.isArray(predictionsResponse.value.data) ? predictionsResponse.value.data : []);
@@ -147,6 +193,7 @@ function Dashboard() {
         setEmergencyLogs(emergencyResponse.status === 'fulfilled' && Array.isArray(emergencyResponse.value.data) ? emergencyResponse.value.data : []);
         setVitalSigns(vitalResponse.status === 'fulfilled' && Array.isArray(vitalResponse.value.data) ? vitalResponse.value.data : []);
         setMedicalRecords(medicalRecordsResponse.status === 'fulfilled' && Array.isArray(medicalRecordsResponse.value.data) ? medicalRecordsResponse.value.data : []);
+        setAppointments(appointmentsResponse.status === 'fulfilled' && Array.isArray(appointmentsResponse.value.data) ? appointmentsResponse.value.data : []);
       } else {
         setPredictions([]);
         setPrescriptions([]);
@@ -154,6 +201,7 @@ function Dashboard() {
         setEmergencyLogs([]);
         setVitalSigns([]);
         setMedicalRecords([]);
+        setAppointments([]);
       }
 
       // Blockchain status + blocks
@@ -163,6 +211,14 @@ function Dashboard() {
       ]);
       setBlockchainStatus(bcVerify[0].status === 'fulfilled' ? bcVerify[0].value.data : null);
       setBlockchainBlocks(bcVerify[1].status === 'fulfilled' ? (bcVerify[1].value.data?.blocks || []) : []);
+
+      // Facilities are public; load once per refresh
+      const fac = await Promise.allSettled([api.get(`/facilities/`)]);
+      setFacilities(fac[0].status === 'fulfilled' && Array.isArray(fac[0].value.data) ? fac[0].value.data : []);
+
+      // Providers list (requires token)
+      const prov = await Promise.allSettled([api.get(`/providers/?token=${token}&limit=100`)]);
+      setProvidersList(prov[0].status === 'fulfilled' && Array.isArray(prov[0].value.data) ? prov[0].value.data : []);
 
       setLoading(false);
     } catch (error) {
@@ -370,6 +426,36 @@ function Dashboard() {
     }
   };
 
+  const createConsent = async () => {
+    try {
+      setError('');
+      const pid = patient?.patient_id;
+      if (!pid) {
+        setErrorSafe('Consent can only be granted by the patient account (log in as patient).');
+        return;
+      }
+      if (!grantConsent.provider_id) {
+        setErrorSafe('Select a provider.');
+        return;
+      }
+      await api.post(`/consent/?token=${token}`, {
+        patient_id: pid,
+        provider_id: Number(grantConsent.provider_id),
+        facility_id: grantConsent.facility_id ? Number(grantConsent.facility_id) : null,
+        consent_given: true,
+        consent_type: grantConsent.consent_type,
+        valid_from: grantConsent.valid_from,
+        valid_until: grantConsent.valid_until ? grantConsent.valid_until : null,
+      });
+      setGrantConsent((c) => ({ ...c, provider_id: '', facility_id: '', consent_type: 'Full Access', valid_until: '' }));
+      await fetchUserData();
+      setActivePage('consent');
+    } catch (e) {
+      console.error(e);
+      setErrorSafe(e?.response?.data?.detail || 'Failed to grant consent.');
+    }
+  };
+
   const requestEmergencyAccess = async () => {
     try {
       const pid = patient?.patient_id || selectedPatient?.patient_id;
@@ -513,6 +599,121 @@ function Dashboard() {
     }
   };
 
+  const createAppointment = async () => {
+    try {
+      setError('');
+      const pid = patient?.patient_id || selectedPatient?.patient_id;
+      if (!pid) {
+        setErrorSafe('Select a patient first.');
+        return;
+      }
+      await api.post(`/appointments/?token=${token}`, {
+        patient_id: pid,
+        provider_id: provider?.provider_id ?? null,
+        facility_id: newAppointment.facility_id ? Number(newAppointment.facility_id) : null,
+        appointment_date: newAppointment.appointment_date,
+        appointment_time: newAppointment.appointment_time,
+        reason: newAppointment.reason || null,
+        notes: newAppointment.notes || null,
+      });
+      setNewAppointment((a) => ({ ...a, reason: '', notes: '' }));
+      await fetchUserData();
+      setActivePage('appointments');
+    } catch (e) {
+      console.error(e);
+      setErrorSafe(e?.response?.data?.detail || 'Failed to create appointment.');
+    }
+  };
+
+  const cancelAppointment = async (appointmentId) => {
+    try {
+      setError('');
+      await api.delete(`/appointments/${appointmentId}?token=${token}`);
+      await fetchUserData();
+    } catch (e) {
+      console.error(e);
+      setErrorSafe(e?.response?.data?.detail || 'Failed to cancel appointment.');
+    }
+  };
+
+  const refreshFacilities = async () => {
+    try {
+      setError('');
+      const params = new URLSearchParams();
+      if (facilityFilters.facility_type) params.set('facility_type', facilityFilters.facility_type);
+      if (facilityFilters.city) params.set('city', facilityFilters.city);
+      const url = params.toString() ? `/facilities/?${params.toString()}` : `/facilities/`;
+      const resp = await api.get(url);
+      setFacilities(Array.isArray(resp.data) ? resp.data : []);
+    } catch (e) {
+      console.error(e);
+      setErrorSafe(e?.message || 'Failed to load facilities.');
+    }
+  };
+
+  const createFacility = async () => {
+    try {
+      setError('');
+      await api.post(`/facilities/?token=${token}`, {
+        facility_name: newFacility.facility_name,
+        facility_type: newFacility.facility_type,
+        address: newFacility.address || null,
+        city: newFacility.city || null,
+        phone_number: newFacility.phone_number || null,
+        email: newFacility.email || null,
+      });
+      setNewFacility({ facility_name: '', facility_type: 'Hospital', address: '', city: '', phone_number: '', email: '' });
+      await refreshFacilities();
+      setActivePage('facilities');
+    } catch (e) {
+      console.error(e);
+      setErrorSafe(e?.response?.data?.detail || 'Failed to create facility (admin only).');
+    }
+  };
+
+  const refreshProviders = async () => {
+    try {
+      setError('');
+      const resp = await api.get(`/providers/?token=${token}&limit=100`);
+      setProvidersList(Array.isArray(resp.data) ? resp.data : []);
+    } catch (e) {
+      console.error(e);
+      setErrorSafe(e?.response?.data?.detail || 'Failed to load providers.');
+    }
+  };
+
+  const registerProvider = async () => {
+    try {
+      setError('');
+      await api.post(`/providers/register?token=${token}`, {
+        email: newProvider.email,
+        password: newProvider.password,
+        user_type: newProvider.user_type,
+        first_name: newProvider.first_name,
+        last_name: newProvider.last_name,
+        provider_type: newProvider.provider_type,
+        specialization: newProvider.specialization || null,
+        license_number: newProvider.license_number,
+        phone_number: newProvider.phone_number || null,
+      });
+      setNewProvider({
+        email: '',
+        password: '',
+        user_type: 'doctor',
+        first_name: '',
+        last_name: '',
+        provider_type: 'Doctor',
+        specialization: '',
+        license_number: '',
+        phone_number: '',
+      });
+      await refreshProviders();
+    } catch (e) {
+      console.error(e);
+      setErrorSafe(e?.response?.data?.detail || 'Failed to register provider (admin only).');
+    }
+  };
+
   if (loading) {
     return (
       <div className="hcApp">
@@ -547,6 +748,9 @@ function Dashboard() {
         <button type="button" className={`hcNavItem ${activePage === 'records' ? 'hcNavItemActive' : ''}`} onClick={() => setActivePage('records')}>
           <span className="hcNavIcon">◧</span>Medical records
         </button>
+        <button type="button" className={`hcNavItem ${activePage === 'appointments' ? 'hcNavItemActive' : ''}`} onClick={() => setActivePage('appointments')}>
+          <span className="hcNavIcon">◷</span>Appointments
+        </button>
         <button type="button" className={`hcNavItem ${activePage === 'prescriptions' ? 'hcNavItemActive' : ''}`} onClick={() => setActivePage('prescriptions')}>
           <span className="hcNavIcon">⊕</span>Prescriptions
         </button>
@@ -568,6 +772,16 @@ function Dashboard() {
             <button type="button" className={`hcNavItem ${activePage === 'emergency' ? 'hcNavItemActive' : ''}`} onClick={() => setActivePage('emergency')}>
               <span className="hcNavIcon">⚡</span>Emergency access
             </button>
+            {user?.user_type === 'admin' && (
+              <>
+                <button type="button" className={`hcNavItem ${activePage === 'facilities' ? 'hcNavItemActive' : ''}`} onClick={() => setActivePage('facilities')}>
+                  <span className="hcNavIcon">⌂</span>Facilities
+                </button>
+                <button type="button" className={`hcNavItem ${activePage === 'providers' ? 'hcNavItemActive' : ''}`} onClick={() => setActivePage('providers')}>
+                  <span className="hcNavIcon">✚</span>Providers
+                </button>
+              </>
+            )}
           </>
         )}
       </nav>
@@ -840,6 +1054,284 @@ function Dashboard() {
             </div>
           )}
 
+          {/* APPOINTMENTS */}
+          {activePage === 'appointments' && (
+            <div>
+              <div className="hcSectionHdr">
+                <h2>Appointments</h2>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button type="button" className="hcBtn hcBtnPrimary" onClick={createAppointment} disabled={!(patient?.patient_id || selectedPatient?.patient_id)}>
+                    + Book appointment
+                  </button>
+                  <button type="button" className="hcBtn" onClick={fetchUserData}>Refresh</button>
+                </div>
+              </div>
+
+              <div className="hcCard" style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>New appointment</div>
+                <div className="hcGrid2">
+                  <div className="hcFormGroup">
+                    <label className="hcLabel">Date</label>
+                    <input className="hcInput" type="date" value={newAppointment.appointment_date} onChange={(e) => setNewAppointment(a => ({ ...a, appointment_date: e.target.value }))} />
+                  </div>
+                  <div className="hcFormGroup">
+                    <label className="hcLabel">Time</label>
+                    <input className="hcInput" type="time" value={newAppointment.appointment_time} onChange={(e) => setNewAppointment(a => ({ ...a, appointment_time: e.target.value }))} />
+                  </div>
+                  <div className="hcFormGroup">
+                    <label className="hcLabel">Facility ID (optional)</label>
+                    <input className="hcInput" value={newAppointment.facility_id} onChange={(e) => setNewAppointment(a => ({ ...a, facility_id: e.target.value }))} placeholder="e.g. 1" />
+                  </div>
+                  <div className="hcFormGroup">
+                    <label className="hcLabel">Reason</label>
+                    <input className="hcInput" value={newAppointment.reason} onChange={(e) => setNewAppointment(a => ({ ...a, reason: e.target.value }))} />
+                  </div>
+                </div>
+                <div className="hcFormGroup" style={{ marginTop: 12 }}>
+                  <label className="hcLabel">Notes</label>
+                  <textarea className="hcTextarea" rows={2} value={newAppointment.notes} onChange={(e) => setNewAppointment(a => ({ ...a, notes: e.target.value }))} />
+                </div>
+                {!patient?.patient_id && user?.user_type !== 'patient' && !selectedPatient?.patient_id && (
+                  <div style={{ marginTop: 10, fontSize: 12, color: 'var(--color-text-secondary)' }}>Select a patient first (Patients tab).</div>
+                )}
+              </div>
+
+              <div className="hcTableWrap">
+                <table className="hcTable">
+                  <thead>
+                    <tr>
+                      <th className="hcTh">Date</th>
+                      <th className="hcTh">Time</th>
+                      <th className="hcTh">Facility</th>
+                      <th className="hcTh">Status</th>
+                      <th className="hcTh">Reason</th>
+                      <th className="hcTh">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {appointments.length ? appointments.map((a) => (
+                      <tr className="hcTr" key={a.appointment_id}>
+                        <td className="hcTd">{String(a.appointment_date)}</td>
+                        <td className="hcTd">{String(a.appointment_time).slice(0, 5)}</td>
+                        <td className="hcTd">{a.facility_id || '—'}</td>
+                        <td className="hcTd">{a.status}</td>
+                        <td className="hcTd">{a.reason || '—'}</td>
+                        <td className="hcTd">
+                          <button type="button" className="hcBtn" onClick={() => cancelAppointment(a.appointment_id)}>Cancel</button>
+                        </td>
+                      </tr>
+                    )) : (
+                      <tr className="hcTr"><td className="hcTd" colSpan={6}>No appointments found.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* FACILITIES */}
+          {activePage === 'facilities' && (
+            <div>
+              <div className="hcSectionHdr">
+                <h2>Facilities</h2>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button type="button" className="hcBtn hcBtnPrimary" onClick={refreshFacilities}>Refresh</button>
+                </div>
+              </div>
+
+              <div className="hcCard" style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Filters</div>
+                <div className="hcGrid2">
+                  <div className="hcFormGroup">
+                    <label className="hcLabel">Facility type</label>
+                    <select className="hcSelect" value={facilityFilters.facility_type} onChange={(e) => setFacilityFilters(f => ({ ...f, facility_type: e.target.value }))}>
+                      <option value="">All</option>
+                      <option value="Hospital">Hospital</option>
+                      <option value="Clinic">Clinic</option>
+                      <option value="Health Center">Health Center</option>
+                      <option value="Pharmacy">Pharmacy</option>
+                    </select>
+                  </div>
+                  <div className="hcFormGroup">
+                    <label className="hcLabel">City</label>
+                    <input className="hcInput" value={facilityFilters.city} onChange={(e) => setFacilityFilters(f => ({ ...f, city: e.target.value }))} placeholder="e.g. Harare" />
+                  </div>
+                </div>
+                <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+                  <button type="button" className="hcBtn" onClick={refreshFacilities}>Apply</button>
+                  <button type="button" className="hcBtn" onClick={() => { setFacilityFilters({ facility_type: '', city: '' }); }}>Clear</button>
+                </div>
+              </div>
+
+              {user?.user_type === 'admin' && (
+                <div className="hcCard" style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Register new facility (admin)</div>
+                  <div className="hcGrid2">
+                    <div className="hcFormGroup">
+                      <label className="hcLabel">Facility name</label>
+                      <input className="hcInput" value={newFacility.facility_name} onChange={(e) => setNewFacility(f => ({ ...f, facility_name: e.target.value }))} />
+                    </div>
+                    <div className="hcFormGroup">
+                      <label className="hcLabel">Type</label>
+                      <select className="hcSelect" value={newFacility.facility_type} onChange={(e) => setNewFacility(f => ({ ...f, facility_type: e.target.value }))}>
+                        <option value="Hospital">Hospital</option>
+                        <option value="Clinic">Clinic</option>
+                        <option value="Health Center">Health Center</option>
+                        <option value="Pharmacy">Pharmacy</option>
+                      </select>
+                    </div>
+                    <div className="hcFormGroup">
+                      <label className="hcLabel">City</label>
+                      <input className="hcInput" value={newFacility.city} onChange={(e) => setNewFacility(f => ({ ...f, city: e.target.value }))} />
+                    </div>
+                    <div className="hcFormGroup">
+                      <label className="hcLabel">Phone</label>
+                      <input className="hcInput" value={newFacility.phone_number} onChange={(e) => setNewFacility(f => ({ ...f, phone_number: e.target.value }))} />
+                    </div>
+                  </div>
+                  <div className="hcFormGroup" style={{ marginTop: 12 }}>
+                    <label className="hcLabel">Address</label>
+                    <input className="hcInput" value={newFacility.address} onChange={(e) => setNewFacility(f => ({ ...f, address: e.target.value }))} />
+                  </div>
+                  <div className="hcFormGroup" style={{ marginTop: 12 }}>
+                    <label className="hcLabel">Email</label>
+                    <input className="hcInput" value={newFacility.email} onChange={(e) => setNewFacility(f => ({ ...f, email: e.target.value }))} />
+                  </div>
+                  <div style={{ marginTop: 12 }}>
+                    <button type="button" className="hcBtn hcBtnPrimary" onClick={createFacility} disabled={!newFacility.facility_name}>
+                      Create facility
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="hcTableWrap">
+                <table className="hcTable">
+                  <thead>
+                    <tr>
+                      <th className="hcTh">Name</th>
+                      <th className="hcTh">Type</th>
+                      <th className="hcTh">City</th>
+                      <th className="hcTh">Phone</th>
+                      <th className="hcTh">Email</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {facilities.length ? facilities.map((f) => (
+                      <tr className="hcTr" key={f.facility_id}>
+                        <td className="hcTd">{f.facility_name}</td>
+                        <td className="hcTd">{f.facility_type}</td>
+                        <td className="hcTd">{f.city || '—'}</td>
+                        <td className="hcTd">{f.phone_number || '—'}</td>
+                        <td className="hcTd">{f.email || '—'}</td>
+                      </tr>
+                    )) : (
+                      <tr className="hcTr"><td className="hcTd" colSpan={5}>No facilities found.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* PROVIDERS */}
+          {activePage === 'providers' && (
+            <div>
+              <div className="hcSectionHdr">
+                <h2>Healthcare providers</h2>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button type="button" className="hcBtn hcBtnPrimary" onClick={refreshProviders}>Refresh</button>
+                </div>
+              </div>
+
+              {user?.user_type === 'admin' && (
+                <div className="hcCard" style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Register provider (admin)</div>
+                  <div className="hcGrid2">
+                    <div className="hcFormGroup">
+                      <label className="hcLabel">Email</label>
+                      <input className="hcInput" value={newProvider.email} onChange={(e) => setNewProvider(p => ({ ...p, email: e.target.value }))} />
+                    </div>
+                    <div className="hcFormGroup">
+                      <label className="hcLabel">Password</label>
+                      <input className="hcInput" type="password" value={newProvider.password} onChange={(e) => setNewProvider(p => ({ ...p, password: e.target.value }))} />
+                    </div>
+                    <div className="hcFormGroup">
+                      <label className="hcLabel">User type</label>
+                      <select className="hcSelect" value={newProvider.user_type} onChange={(e) => setNewProvider(p => ({ ...p, user_type: e.target.value }))}>
+                        <option value="doctor">doctor</option>
+                        <option value="nurse">nurse</option>
+                        <option value="admin">admin</option>
+                      </select>
+                    </div>
+                    <div className="hcFormGroup">
+                      <label className="hcLabel">Provider type</label>
+                      <select className="hcSelect" value={newProvider.provider_type} onChange={(e) => setNewProvider(p => ({ ...p, provider_type: e.target.value }))}>
+                        <option value="Doctor">Doctor</option>
+                        <option value="Nurse">Nurse</option>
+                        <option value="Specialist">Specialist</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="hcGrid2" style={{ marginTop: 12 }}>
+                    <div className="hcFormGroup">
+                      <label className="hcLabel">First name</label>
+                      <input className="hcInput" value={newProvider.first_name} onChange={(e) => setNewProvider(p => ({ ...p, first_name: e.target.value }))} />
+                    </div>
+                    <div className="hcFormGroup">
+                      <label className="hcLabel">Last name</label>
+                      <input className="hcInput" value={newProvider.last_name} onChange={(e) => setNewProvider(p => ({ ...p, last_name: e.target.value }))} />
+                    </div>
+                    <div className="hcFormGroup">
+                      <label className="hcLabel">License number</label>
+                      <input className="hcInput" value={newProvider.license_number} onChange={(e) => setNewProvider(p => ({ ...p, license_number: e.target.value }))} />
+                    </div>
+                    <div className="hcFormGroup">
+                      <label className="hcLabel">Phone</label>
+                      <input className="hcInput" value={newProvider.phone_number} onChange={(e) => setNewProvider(p => ({ ...p, phone_number: e.target.value }))} />
+                    </div>
+                  </div>
+                  <div className="hcFormGroup" style={{ marginTop: 12 }}>
+                    <label className="hcLabel">Specialization</label>
+                    <input className="hcInput" value={newProvider.specialization} onChange={(e) => setNewProvider(p => ({ ...p, specialization: e.target.value }))} />
+                  </div>
+                  <div style={{ marginTop: 12 }}>
+                    <button type="button" className="hcBtn hcBtnPrimary" onClick={registerProvider} disabled={!newProvider.email || !newProvider.password || !newProvider.first_name || !newProvider.last_name || !newProvider.license_number}>
+                      Create provider
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="hcTableWrap">
+                <table className="hcTable">
+                  <thead>
+                    <tr>
+                      <th className="hcTh">Name</th>
+                      <th className="hcTh">Type</th>
+                      <th className="hcTh">Specialization</th>
+                      <th className="hcTh">License</th>
+                      <th className="hcTh">Phone</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {providersList.length ? providersList.map((p) => (
+                      <tr className="hcTr" key={p.provider_id}>
+                        <td className="hcTd">{p.first_name} {p.last_name}</td>
+                        <td className="hcTd">{p.provider_type}</td>
+                        <td className="hcTd">{p.specialization || '—'}</td>
+                        <td className="hcTd">{p.license_number}</td>
+                        <td className="hcTd">{p.phone_number || '—'}</td>
+                      </tr>
+                    )) : (
+                      <tr className="hcTr"><td className="hcTd" colSpan={5}>No providers found.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* PRESCRIPTIONS */}
           {activePage === 'prescriptions' && (
             <div>
@@ -916,6 +1408,58 @@ function Dashboard() {
                 <h2>Consent manager</h2>
                 <button type="button" className="hcBtn" onClick={() => setActivePage('dashboard')}>Back</button>
               </div>
+              
+              {user?.user_type === 'patient' && (
+                <div className="hcCard" style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Grant new consent</div>
+                  <div className="hcGrid2">
+                    <div className="hcFormGroup">
+                      <label className="hcLabel">Provider</label>
+                      <select className="hcSelect" value={grantConsent.provider_id} onChange={(e) => setGrantConsent(c => ({ ...c, provider_id: e.target.value }))}>
+                        <option value="">Select provider…</option>
+                        {providersList.map(p => (
+                          <option key={p.provider_id} value={p.provider_id}>
+                            {p.first_name} {p.last_name} — {p.provider_type}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="hcFormGroup">
+                      <label className="hcLabel">Facility (optional)</label>
+                      <select className="hcSelect" value={grantConsent.facility_id} onChange={(e) => setGrantConsent(c => ({ ...c, facility_id: e.target.value }))}>
+                        <option value="">Any facility</option>
+                        {facilities.map(f => (
+                          <option key={f.facility_id} value={f.facility_id}>
+                            {f.facility_name} ({f.city || '—'})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="hcFormGroup">
+                      <label className="hcLabel">Consent type</label>
+                      <select className="hcSelect" value={grantConsent.consent_type} onChange={(e) => setGrantConsent(c => ({ ...c, consent_type: e.target.value }))}>
+                        <option>Full Access</option>
+                        <option>Limited Access</option>
+                        <option>Emergency Only</option>
+                      </select>
+                    </div>
+                    <div className="hcFormGroup">
+                      <label className="hcLabel">Valid from</label>
+                      <input className="hcInput" type="date" value={grantConsent.valid_from} onChange={(e) => setGrantConsent(c => ({ ...c, valid_from: e.target.value }))} />
+                    </div>
+                    <div className="hcFormGroup">
+                      <label className="hcLabel">Valid until (optional)</label>
+                      <input className="hcInput" type="date" value={grantConsent.valid_until} onChange={(e) => setGrantConsent(c => ({ ...c, valid_until: e.target.value }))} />
+                    </div>
+                  </div>
+                  <div style={{ marginTop: 12 }}>
+                    <button type="button" className="hcBtn hcBtnPrimary" onClick={createConsent}>
+                      Grant consent
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="hcCard" style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 13, color: 'var(--color-text-secondary)', marginBottom: 14, lineHeight: 1.6 }}>
                   You control who can access your health data. Consents are recorded and can be verified.
@@ -945,9 +1489,6 @@ function Dashboard() {
                   </div>
                 )}
               </div>
-              <button type="button" className="hcBtn hcBtnPrimary" disabled title="Add a Grant Consent form next">
-                Grant new consent
-              </button>
             </div>
           )}
 

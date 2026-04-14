@@ -5,6 +5,7 @@ from app.models.user import User
 from app.schemas.healthcare_provider import HealthcareProviderCreate
 from app.schemas.auth import UserRegister
 from app.services.auth_service import AuthService
+from typing import List, Optional
 
 class HealthcareProviderService:
     
@@ -71,3 +72,15 @@ class HealthcareProviderService:
             )
         
         return provider
+
+    @staticmethod
+    def get_all_providers(
+        db: Session,
+        provider_type: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 50
+    ) -> List[HealthcareProvider]:
+        query = db.query(HealthcareProvider)
+        if provider_type:
+            query = query.filter(HealthcareProvider.provider_type == provider_type)
+        return query.order_by(HealthcareProvider.last_name.asc(), HealthcareProvider.first_name.asc()).offset(skip).limit(limit).all()

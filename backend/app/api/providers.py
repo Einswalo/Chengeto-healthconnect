@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.schemas.healthcare_provider import HealthcareProviderCreate, HealthcareProviderResponse
@@ -86,6 +86,26 @@ async def get_provider(
     user = AuthService.get_current_user(db, token)
     provider = HealthcareProviderService.get_provider_by_id(db, provider_id)
     return provider
+
+
+from typing import List
+
+@router.get("/", response_model=List[HealthcareProviderResponse])
+async def list_providers(
+    token: str,
+    provider_type: str = Query(None, description="Filter by provider_type (Doctor, Nurse, Specialist)"),
+    skip: int = 0,
+    limit: int = 50,
+    db: Session = Depends(get_db)
+):
+    """
+    List healthcare providers.
+    
+    Requires: JWT token (any authenticated user)
+    """
+    _user = AuthService.get_current_user(db, token)
+    providers = HealthcareProviderService.get_all_providers(db, provider_type=provider_type, skip=skip, limit=limit)
+    return providers
 
 
 @router.get("/me", response_model=HealthcareProviderResponse)
