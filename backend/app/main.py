@@ -1,4 +1,5 @@
-from fastapi import FastAPI
+# from fastapi import FastAPI|
+from fastapi_offline import FastAPIOffline
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from sqlalchemy import text
@@ -20,7 +21,7 @@ from app.models.ai_prediction import AIPrediction
 from app.models.blockchain import BlockchainBlock
 
 # Create FastAPI app
-app = FastAPI(
+app = FastAPIOffline(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     debug=settings.DEBUG

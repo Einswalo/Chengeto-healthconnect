@@ -56,7 +56,14 @@ def require_patient_access(
         return AccessContext(patient_id=patient_id, provider_id=None, via_consent=False, via_emergency=False)
 
     # Provider access (doctor/nurse/pharmacist/etc)
-    provider = HealthcareProviderService.get_provider_by_user_id(db, user.user_id)
+    try:
+        provider = HealthcareProviderService.get_provider_by_user_id(db, user.user_id)
+    except HTTPException:
+        # Non-provider accounts (e.g. receptionist) may not have a provider profile.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: provider profile required"
+        )
     provider_id = provider.provider_id
 
     today = date.today()
