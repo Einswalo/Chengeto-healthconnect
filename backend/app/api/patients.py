@@ -8,6 +8,8 @@ from app.services.patient_service import PatientService
 from app.services.auth_service import AuthService
 from app.models.user import User
 from app.core.access_control import require_patient_access
+from sqlalchemy import or_
+from app.api.auth import get_current_user
 
 router = APIRouter(prefix="/patients", tags=["Patients"])
 
@@ -165,3 +167,26 @@ async def search_patients(
     )
     return patients
 
+
+@router.get("/search")
+async def search_patients(
+    query: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Search patients by name, email, or phone"""
+    
+    # Only doctors, nurses, and admins can search
+    if current_user.user_type not in ["doctor", "nurse", "admin"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    # Search in patients table
+    patients = db.query(Patient).filter(
+        or_(
+            Patient.first_name.ilike(f"%{query}%"),
+            Patient.last_name.ilike(f"%{query}%"),
+            Patient.phone_number.ilike(f"%{query}%")
+        )
+    ).all()
+    
+    return patients
