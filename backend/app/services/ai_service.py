@@ -165,3 +165,38 @@ class AIService:
         confidence = min(confidence, 95.0)
         
         return diagnosis, confidence
+    
+@staticmethod
+def patient_symptom_check(
+    symptoms: str,
+    patient_location: str = None,
+    vital_signs: dict = None
+) -> dict:
+    """
+    Advisory symptom check for patients.
+    Uses the same AI engine but returns guidance instead of a clinical diagnosis.
+    """
+    # Build a prompt for the AI focused on guidance, not diagnosis
+    location_note = f" Patient is in {patient_location}." if patient_location else ""
+    vitals_note = f" Vitals: {vital_signs}." if vital_signs else ""
+
+    prompt = (
+        f"A patient reports the following symptoms: {symptoms}.{location_note}{vitals_note} "
+        "Provide: 1) A list of possible conditions (not a diagnosis), "
+        "2) A recommendation (e.g. visit clinic, go to emergency, rest at home), "
+        "3) An urgency level: low, moderate, high, or emergency. "
+        "Always advise consulting a qualified healthcare provider."
+    )
+
+    # Call your existing AI engine — adjust this to match how predict_disease works
+    ai_result = AIService._call_ai_model(prompt)  # replace with your actual AI call
+
+    return {
+        "possible_conditions": ai_result.get("conditions", []),
+        "recommendation": ai_result.get("recommendation", "Please consult a healthcare provider."),
+        "urgency_level": ai_result.get("urgency", "moderate"),
+        "disclaimer": (
+            "This is not a medical diagnosis. "
+            "Always consult a qualified healthcare provider for proper diagnosis and treatment."
+        )
+    }

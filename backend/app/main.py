@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from sqlalchemy import text
 from app.db.database import engine
+from app.api.dashboard import router as dashboard_router
 from app.api import auth, patients, appointments, medical_records, vital_signs, prescriptions, facilities, providers, consent_records, emergency_access, ai_predictions, blockchain
 
 # Import all models so SQLAlchemy can find them
@@ -78,7 +79,7 @@ app.include_router(consent_records.router)
 app.include_router(emergency_access.router)
 app.include_router(ai_predictions.router)
 app.include_router(blockchain.router)
-
+app.include_router(dashboard_router)   
 
 # Root endpoint
 @app.get("/")
