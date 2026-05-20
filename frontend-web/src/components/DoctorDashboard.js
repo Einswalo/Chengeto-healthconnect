@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import './DoctorDashboard.css';
 
+const API = 'http://localhost:8000';
+
 function DoctorDashboard() {
   const [activeTab, setActiveTab] = useState('patients');
   const [patients, setPatients] = useState([]);
@@ -10,14 +12,15 @@ function DoctorDashboard() {
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const [currentUserEmail, setCurrentUserEmail] = useState('');
-  
+
   const [medicalRecordForm, setMedicalRecordForm] = useState({
     diagnosis: '',
     symptoms: '',
     treatment_plan: '',
-    notes: ''
+    notes: '',
+    visit_date: new Date().toISOString().split('T')[0], // ✅ default to today
   });
-  
+
   const [vitalSignsForm, setVitalSignsForm] = useState({
     temperature: '',
     blood_pressure: '',
@@ -25,7 +28,7 @@ function DoctorDashboard() {
     respiratory_rate: '',
     oxygen_saturation: ''
   });
-  
+
   const [prescriptionForm, setPrescriptionForm] = useState({
     medication_name: '',
     dosage: '',
@@ -33,7 +36,7 @@ function DoctorDashboard() {
     duration: '',
     instructions: ''
   });
-  
+
   const [aiPrediction, setAiPrediction] = useState(null);
   const [symptoms, setSymptoms] = useState('');
   const [location, setLocation] = useState('Harare');
@@ -48,7 +51,7 @@ function DoctorDashboard() {
 
   const fetchCurrentUser = async () => {
     try {
-      const response = await axios.get('http://localhost:8000/auth/me', config);
+      const response = await axios.get(`${API}/auth/me`, config);
       setCurrentUserEmail(response.data.email);
     } catch (error) {
       console.error('Error fetching current user:', error);
@@ -57,7 +60,7 @@ function DoctorDashboard() {
 
   const fetchAllPatients = async () => {
     try {
-      const response = await axios.get('http://localhost:8000/patients', config);
+      const response = await axios.get(`${API}/patients/`, config);
       setPatients(response.data);
       setSearchResults(response.data);
     } catch (error) {
@@ -70,19 +73,17 @@ function DoctorDashboard() {
       setSearchResults(patients);
       return;
     }
-
     setIsSearching(true);
-    
     try {
       const response = await axios.get(
-        `http://localhost:8000/patients/search?query=${query}`,
+        `${API}/patients/search?q=${query}`,  // ✅ fixed param name from 'query' to 'q'
         config
       );
       setSearchResults(response.data);
     } catch (error) {
       console.error('Error searching patients:', error);
       setSearchResults([]);
-      alert('❌ Search failed. Make sure backend has search endpoint!');
+      alert('❌ Search failed.');
     } finally {
       setIsSearching(false);
     }
@@ -93,42 +94,44 @@ function DoctorDashboard() {
       alert('Please select a patient and enter symptoms');
       return;
     }
-
     try {
       const response = await axios.post(
-        'http://localhost:8000/ai/predict',
+        `${API}/ai/predict`,  // ✅ trailing slash not needed for POST
         {
           patient_id: selectedPatient.patient_id,
           symptoms: symptoms,
-          location: location
+          patient_location: location,  // ✅ fixed: was 'location', must be 'patient_location'
         },
         config
       );
       setAiPrediction(response.data);
-      setMedicalRecordForm({
-        ...medicalRecordForm,
+      setMedicalRecordForm(prev => ({
+        ...prev,
         diagnosis: response.data.predicted_disease,
         symptoms: symptoms
-      });
+      }));
     } catch (error) {
       console.error('Error getting AI prediction:', error);
-      alert('❌ Error getting AI prediction');
+      alert('❌ Error getting AI prediction. Make sure you have consent for this patient.');
     }
   };
 
   const handleCreateMedicalRecord = async (e) => {
     e.preventDefault();
     if (!selectedPatient) {
-      alert('Please select a patient');
+      alert('Please select a patient first');
       return;
     }
-
     try {
       await axios.post(
-        'http://localhost:8000/medical-records',
+        `${API}/medical-records/`,  // ✅ trailing slash added
         {
           patient_id: selectedPatient.patient_id,
-          ...medicalRecordForm
+          visit_date: medicalRecordForm.visit_date,  // ✅ now included
+          diagnosis: medicalRecordForm.diagnosis,
+          symptoms: medicalRecordForm.symptoms,
+          treatment_plan: medicalRecordForm.treatment_plan,
+          notes: medicalRecordForm.notes,
         },
         config
       );
@@ -137,26 +140,26 @@ function DoctorDashboard() {
         diagnosis: '',
         symptoms: '',
         treatment_plan: '',
-        notes: ''
+        notes: '',
+        visit_date: new Date().toISOString().split('T')[0],
       });
       setAiPrediction(null);
       setSymptoms('');
     } catch (error) {
-      console.error('Error creating medical record:', error);
-      alert('❌ Error creating medical record');
+      console.error('Error creating medical record:', error.response?.data || error);
+      alert('❌ Error creating medical record: ' + JSON.stringify(error.response?.data?.detail || error.message));
     }
   };
 
   const handleRecordVitalSigns = async (e) => {
     e.preventDefault();
     if (!selectedPatient) {
-      alert('Please select a patient');
+      alert('Please select a patient first');
       return;
     }
-
     try {
       await axios.post(
-        'http://localhost:8000/vital-signs',
+        `${API}/vital-signs/`,  // ✅ trailing slash added
         {
           patient_id: selectedPatient.patient_id,
           ...vitalSignsForm
@@ -172,21 +175,20 @@ function DoctorDashboard() {
         oxygen_saturation: ''
       });
     } catch (error) {
-      console.error('Error recording vital signs:', error);
-      alert('❌ Error recording vital signs');
+      console.error('Error recording vital signs:', error.response?.data || error);
+      alert('❌ Error recording vital signs: ' + JSON.stringify(error.response?.data?.detail || error.message));
     }
   };
 
   const handleCreatePrescription = async (e) => {
     e.preventDefault();
     if (!selectedPatient) {
-      alert('Please select a patient');
+      alert('Please select a patient first');
       return;
     }
-
     try {
       const response = await axios.post(
-        'http://localhost:8000/prescriptions',
+        `${API}/prescriptions/`,  // ✅ trailing slash added
         {
           patient_id: selectedPatient.patient_id,
           ...prescriptionForm
@@ -202,8 +204,8 @@ function DoctorDashboard() {
         instructions: ''
       });
     } catch (error) {
-      console.error('Error creating prescription:', error);
-      alert('❌ Error creating prescription');
+      console.error('Error creating prescription:', error.response?.data || error);
+      alert('❌ Error creating prescription: ' + JSON.stringify(error.response?.data?.detail || error.message));
     }
   };
 
@@ -233,7 +235,6 @@ function DoctorDashboard() {
             <p>Total Patients</p>
           </div>
         </div>
-        
         <div className="stat-card stat-appointments">
           <div className="stat-icon">📅</div>
           <div className="stat-content">
@@ -241,7 +242,6 @@ function DoctorDashboard() {
             <p>Today's Appointments</p>
           </div>
         </div>
-        
         <div className="stat-card stat-prescriptions">
           <div className="stat-icon">💊</div>
           <div className="stat-content">
@@ -249,7 +249,6 @@ function DoctorDashboard() {
             <p>Pending Prescriptions</p>
           </div>
         </div>
-
         {selectedPatient && (
           <div className="stat-card stat-selected">
             <div className="stat-icon">✅</div>
@@ -262,37 +261,22 @@ function DoctorDashboard() {
       </div>
 
       <div className="tabs">
-        <button 
-          className={activeTab === 'patients' ? 'active' : ''} 
-          onClick={() => setActiveTab('patients')}
-        >
-          Patients
-        </button>
-        <button 
-          className={activeTab === 'medical-record' ? 'active' : ''} 
-          onClick={() => setActiveTab('medical-record')}
-        >
-          Medical Record
-        </button>
-        <button 
-          className={activeTab === 'vital-signs' ? 'active' : ''} 
-          onClick={() => setActiveTab('vital-signs')}
-        >
-          Vital Signs
-        </button>
-        <button 
-          className={activeTab === 'prescription' ? 'active' : ''} 
-          onClick={() => setActiveTab('prescription')}
-        >
-          Prescription
-        </button>
+        {['patients', 'medical-record', 'vital-signs', 'prescription'].map(tab => (
+          <button
+            key={tab}
+            className={activeTab === tab ? 'active' : ''}
+            onClick={() => setActiveTab(tab)}
+          >
+            {tab.replace('-', ' ').replace(/\b\w/g, c => c.toUpperCase())}
+          </button>
+        ))}
       </div>
 
       <div className="tab-content">
+        {/* PATIENTS TAB */}
         {activeTab === 'patients' && (
           <div>
             <h2>Search & Select Patient</h2>
-            
             <div className="search-section">
               <input
                 type="text"
@@ -300,43 +284,28 @@ function DoctorDashboard() {
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
-                  // Auto-search as user types (2+ chars)
-                  if (e.target.value.length >= 2) {
-                    handleSearch(e.target.value);
-                  } else if (e.target.value.length === 0) {
-                    setSearchResults(patients);
-                  }
+                  if (e.target.value.length >= 2) handleSearch(e.target.value);
+                  else if (e.target.value.length === 0) setSearchResults(patients);
                 }}
                 className="search-input"
                 disabled={isSearching}
               />
-              <button 
-                onClick={() => handleSearch(searchQuery)} 
-                className="search-btn"
-                disabled={isSearching}
-              >
+              <button onClick={() => handleSearch(searchQuery)} className="search-btn" disabled={isSearching}>
                 🔍 Search
               </button>
-              <button 
-                onClick={() => {
-                  setSearchQuery('');
-                  setSearchResults(patients);
-                }} 
-                className="clear-btn"
-              >
+              <button onClick={() => { setSearchQuery(''); setSearchResults(patients); }} className="clear-btn">
                 ✖ Clear
               </button>
             </div>
 
             <p className="results-count">
               {searchResults.length > 0 ? (
-                <span className="match">✓ Found {searchResults.length} patient{searchResults.length !== 1 ? 's' : ''}</span>
+                <span className="match">✔ Found {searchResults.length} patient{searchResults.length !== 1 ? 's' : ''}</span>
               ) : (
                 <span className="no-match">✖ No patients match "{searchQuery}"</span>
               )}
             </p>
 
-            {/* Selected Patient Banner */}
             {selectedPatient && (
               <div className="selected-patient-banner">
                 <div className="banner-icon">✅</div>
@@ -349,24 +318,17 @@ function DoctorDashboard() {
                     <span>📍 {selectedPatient.city}</span>
                   </div>
                 </div>
-                <button 
-                  onClick={() => setSelectedPatient(null)} 
-                  className="deselect-btn"
-                >
-                  ✖ Deselect
-                </button>
+                <button onClick={() => setSelectedPatient(null)} className="deselect-btn">✖ Deselect</button>
               </div>
             )}
 
             <div className="patients-list">
               {searchResults.length === 0 ? (
-                <div className="no-results">
-                  <p>No patients found. Try a different search term.</p>
-                </div>
+                <div className="no-results"><p>No patients found.</p></div>
               ) : (
                 searchResults.map(patient => (
-                  <div 
-                    key={patient.patient_id} 
+                  <div
+                    key={patient.patient_id}
                     className={`patient-card ${selectedPatient?.patient_id === patient.patient_id ? 'selected' : ''}`}
                     onClick={() => setSelectedPatient(patient)}
                   >
@@ -381,11 +343,12 @@ function DoctorDashboard() {
           </div>
         )}
 
+        {/* MEDICAL RECORD TAB */}
         {activeTab === 'medical-record' && (
           <div>
             <h2>Create Medical Record</h2>
             {!selectedPatient && <p className="warning">⚠️ Please select a patient first!</p>}
-            
+
             <div className="ai-section">
               <h3>🤖 AI Diagnostic Assistant</h3>
               <input
@@ -405,7 +368,7 @@ function DoctorDashboard() {
               <button onClick={handleGetAIPrediction} className="ai-btn" disabled={!selectedPatient}>
                 Get AI Prediction
               </button>
-              
+
               {aiPrediction && (
                 <div className="ai-result">
                   <h4>✨ AI Prediction:</h4>
@@ -417,31 +380,39 @@ function DoctorDashboard() {
             </div>
 
             <form onSubmit={handleCreateMedicalRecord}>
+              {/* ✅ visit_date field added */}
+              <label className="form-label">Visit Date</label>
+              <input
+                type="date"
+                value={medicalRecordForm.visit_date}
+                onChange={(e) => setMedicalRecordForm({ ...medicalRecordForm, visit_date: e.target.value })}
+                required
+                className="form-input"
+              />
               <input
                 type="text"
                 placeholder="Diagnosis"
                 value={medicalRecordForm.diagnosis}
-                onChange={(e) => setMedicalRecordForm({...medicalRecordForm, diagnosis: e.target.value})}
+                onChange={(e) => setMedicalRecordForm({ ...medicalRecordForm, diagnosis: e.target.value })}
                 required
                 className="form-input"
               />
               <textarea
                 placeholder="Symptoms"
                 value={medicalRecordForm.symptoms}
-                onChange={(e) => setMedicalRecordForm({...medicalRecordForm, symptoms: e.target.value})}
-                required
+                onChange={(e) => setMedicalRecordForm({ ...medicalRecordForm, symptoms: e.target.value })}
                 className="form-textarea"
               />
               <textarea
                 placeholder="Treatment Plan"
                 value={medicalRecordForm.treatment_plan}
-                onChange={(e) => setMedicalRecordForm({...medicalRecordForm, treatment_plan: e.target.value})}
+                onChange={(e) => setMedicalRecordForm({ ...medicalRecordForm, treatment_plan: e.target.value })}
                 className="form-textarea"
               />
               <textarea
                 placeholder="Notes"
                 value={medicalRecordForm.notes}
-                onChange={(e) => setMedicalRecordForm({...medicalRecordForm, notes: e.target.value})}
+                onChange={(e) => setMedicalRecordForm({ ...medicalRecordForm, notes: e.target.value })}
                 className="form-textarea"
               />
               <button type="submit" className="submit-btn" disabled={!selectedPatient}>
@@ -451,99 +422,43 @@ function DoctorDashboard() {
           </div>
         )}
 
+        {/* VITAL SIGNS TAB */}
         {activeTab === 'vital-signs' && (
           <div>
             <h2>Record Vital Signs</h2>
             {!selectedPatient && <p className="warning">⚠️ Please select a patient first!</p>}
-            
             <form onSubmit={handleRecordVitalSigns}>
-              <input
-                type="number"
-                step="0.1"
-                placeholder="Temperature (°C)"
-                value={vitalSignsForm.temperature}
-                onChange={(e) => setVitalSignsForm({...vitalSignsForm, temperature: e.target.value})}
-                required
-                className="form-input"
-              />
-              <input
-                type="text"
-                placeholder="Blood Pressure (e.g., 120/80)"
-                value={vitalSignsForm.blood_pressure}
-                onChange={(e) => setVitalSignsForm({...vitalSignsForm, blood_pressure: e.target.value})}
-                className="form-input"
-              />
-              <input
-                type="number"
-                placeholder="Heart Rate (bpm)"
-                value={vitalSignsForm.heart_rate}
-                onChange={(e) => setVitalSignsForm({...vitalSignsForm, heart_rate: e.target.value})}
-                className="form-input"
-              />
-              <input
-                type="number"
-                placeholder="Respiratory Rate (breaths/min)"
-                value={vitalSignsForm.respiratory_rate}
-                onChange={(e) => setVitalSignsForm({...vitalSignsForm, respiratory_rate: e.target.value})}
-                className="form-input"
-              />
-              <input
-                type="number"
-                placeholder="Oxygen Saturation (%)"
-                value={vitalSignsForm.oxygen_saturation}
-                onChange={(e) => setVitalSignsForm({...vitalSignsForm, oxygen_saturation: e.target.value})}
-                className="form-input"
-              />
-              <button type="submit" className="submit-btn" disabled={!selectedPatient}>
-                Record Vital Signs
-              </button>
+              <input type="number" step="0.1" placeholder="Temperature (°C)" value={vitalSignsForm.temperature}
+                onChange={(e) => setVitalSignsForm({ ...vitalSignsForm, temperature: e.target.value })} required className="form-input" />
+              <input type="text" placeholder="Blood Pressure (e.g., 120/80)" value={vitalSignsForm.blood_pressure}
+                onChange={(e) => setVitalSignsForm({ ...vitalSignsForm, blood_pressure: e.target.value })} className="form-input" />
+              <input type="number" placeholder="Heart Rate (bpm)" value={vitalSignsForm.heart_rate}
+                onChange={(e) => setVitalSignsForm({ ...vitalSignsForm, heart_rate: e.target.value })} className="form-input" />
+              <input type="number" placeholder="Respiratory Rate (breaths/min)" value={vitalSignsForm.respiratory_rate}
+                onChange={(e) => setVitalSignsForm({ ...vitalSignsForm, respiratory_rate: e.target.value })} className="form-input" />
+              <input type="number" placeholder="Oxygen Saturation (%)" value={vitalSignsForm.oxygen_saturation}
+                onChange={(e) => setVitalSignsForm({ ...vitalSignsForm, oxygen_saturation: e.target.value })} className="form-input" />
+              <button type="submit" className="submit-btn" disabled={!selectedPatient}>Record Vital Signs</button>
             </form>
           </div>
         )}
 
+        {/* PRESCRIPTION TAB */}
         {activeTab === 'prescription' && (
           <div>
             <h2>Create Prescription</h2>
             {!selectedPatient && <p className="warning">⚠️ Please select a patient first!</p>}
-            
             <form onSubmit={handleCreatePrescription}>
-              <input
-                type="text"
-                placeholder="Medication Name"
-                value={prescriptionForm.medication_name}
-                onChange={(e) => setPrescriptionForm({...prescriptionForm, medication_name: e.target.value})}
-                required
-                className="form-input"
-              />
-              <input
-                type="text"
-                placeholder="Dosage (e.g., 500mg)"
-                value={prescriptionForm.dosage}
-                onChange={(e) => setPrescriptionForm({...prescriptionForm, dosage: e.target.value})}
-                required
-                className="form-input"
-              />
-              <input
-                type="text"
-                placeholder="Frequency (e.g., Twice daily)"
-                value={prescriptionForm.frequency}
-                onChange={(e) => setPrescriptionForm({...prescriptionForm, frequency: e.target.value})}
-                required
-                className="form-input"
-              />
-              <input
-                type="text"
-                placeholder="Duration (e.g., 7 days)"
-                value={prescriptionForm.duration}
-                onChange={(e) => setPrescriptionForm({...prescriptionForm, duration: e.target.value})}
-                className="form-input"
-              />
-              <textarea
-                placeholder="Instructions"
-                value={prescriptionForm.instructions}
-                onChange={(e) => setPrescriptionForm({...prescriptionForm, instructions: e.target.value})}
-                className="form-textarea"
-              />
+              <input type="text" placeholder="Medication Name" value={prescriptionForm.medication_name}
+                onChange={(e) => setPrescriptionForm({ ...prescriptionForm, medication_name: e.target.value })} required className="form-input" />
+              <input type="text" placeholder="Dosage (e.g., 500mg)" value={prescriptionForm.dosage}
+                onChange={(e) => setPrescriptionForm({ ...prescriptionForm, dosage: e.target.value })} required className="form-input" />
+              <input type="text" placeholder="Frequency (e.g., Twice daily)" value={prescriptionForm.frequency}
+                onChange={(e) => setPrescriptionForm({ ...prescriptionForm, frequency: e.target.value })} required className="form-input" />
+              <input type="text" placeholder="Duration (e.g., 7 days)" value={prescriptionForm.duration}
+                onChange={(e) => setPrescriptionForm({ ...prescriptionForm, duration: e.target.value })} className="form-input" />
+              <textarea placeholder="Instructions" value={prescriptionForm.instructions}
+                onChange={(e) => setPrescriptionForm({ ...prescriptionForm, instructions: e.target.value })} className="form-textarea" />
               <button type="submit" className="submit-btn" disabled={!selectedPatient}>
                 💊 Create Prescription (Blockchain)
               </button>
