@@ -20,6 +20,9 @@ from app.models.consent_record import ConsentRecord
 from app.models.emergency_access_log import EmergencyAccessLog
 from app.models.ai_prediction import AIPrediction
 from app.models.blockchain import BlockchainBlock
+from fastapi.middleware.cors import CORSMiddleware
+from app.schemas.patient_auth import PatientLogin
+from app.api.doctor_dashboard import router as doctor_dashboard_router
 
 # Create FastAPI app
 app = FastAPIOffline(
@@ -79,7 +82,8 @@ app.include_router(consent_records.router)
 app.include_router(emergency_access.router)
 app.include_router(ai_predictions.router)
 app.include_router(blockchain.router)
-app.include_router(dashboard_router)   
+app.include_router(dashboard_router)
+app.include_router(doctor_dashboard_router)
 
 # Root endpoint
 @app.get("/")

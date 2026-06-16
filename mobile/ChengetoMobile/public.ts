@@ -1,0 +1,1 @@
+export const publicIp =  "http://192.168.24.175:8000"

@@ -14,9 +14,11 @@ class HealthcareProvider(Base):
     specialization = Column(String(100))
     license_number = Column(String(100), unique=True)
     phone_number = Column(String(20))
+    facility_id = Column(Integer, ForeignKey("facilities.facility_id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
-    # Relationship to User
+    # Relationships
     user = relationship("User", backref="healthcare_provider")
-    
+    facility = relationship("Facility", backref="healthcare_providers")
+    facility_id = Column(Integer, ForeignKey("facilities.facility_id", ondelete="SET NULL"), nullable=True)

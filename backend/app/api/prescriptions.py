@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from app.db.database import get_db
 from app.schemas.prescription import PrescriptionCreate, PrescriptionResponse
 from app.services.prescription_service import PrescriptionService
+from app.models.prescription import Prescription
 from app.models.user import User
 from app.core.access_control import require_patient_access
 from app.core.roles import CLINICAL_STAFF, DISPENSERS
@@ -19,15 +20,57 @@ async def get_patient_prescriptions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Get all prescriptions for a patient.
-
-    - Patients can view their own prescriptions (read-only)
-    - Providers need active consent or emergency access
-    """
+    """Get all prescriptions for a patient."""
     require_patient_access(db, user=current_user, patient_id=patient_id)
-    prescriptions = PrescriptionService.get_patient_prescriptions(db, patient_id)
+    return PrescriptionService.get_patient_prescriptions(db, patient_id)
+
+
+# ✅ /pending — pharmacist sees all undispensed prescriptions
+@router.get("/pending", response_model=List[PrescriptionResponse])
+async def get_pending_prescriptions(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Get all pending (undispensed) prescriptions.
+    Requires: pharmacist or admin role.
+    """
+    if current_user.user_type not in DISPENSERS:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only pharmacists can view pending prescriptions"
+        )
+    prescriptions = db.query(Prescription).filter(
+        Prescription.is_dispensed == False
+    ).order_by(Prescription.created_at.desc()).all()
     return prescriptions
+
+
+# ✅ /verify/{token} — lookup by blockchain token
+@router.get("/verify/{blockchain_token}", response_model=PrescriptionResponse)
+async def verify_prescription_by_token(
+    blockchain_token: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Verify and retrieve a prescription by blockchain token.
+    Used by pharmacists to look up a prescription.
+    """
+    if current_user.user_type not in DISPENSERS:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only pharmacists can verify prescriptions"
+        )
+    prescription = db.query(Prescription).filter(
+        Prescription.blockchain_token == blockchain_token
+    ).first()
+    if not prescription:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Prescription not found. Invalid or expired token."
+        )
+    return prescription
 
 
 @router.get("/{prescription_id}", response_model=PrescriptionResponse)
@@ -36,12 +79,7 @@ async def get_prescription(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Get a single prescription by ID.
-
-    - Patients can view their own prescriptions
-    - Providers need consent/emergency access
-    """
+    """Get a single prescription by ID."""
     prescription = PrescriptionService.get_prescription_by_id(db, prescription_id)
     require_patient_access(db, user=current_user, patient_id=prescription.patient_id)
     return prescription
@@ -53,27 +91,14 @@ async def create_prescription(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Create a new prescription.
-
-    Requires: doctor, nurse, or admin role.
-    Patients cannot create prescriptions.
-
-    NOTE: Drug interaction checking requires accreditation from
-    Zimbabwe Ministry of Health and Child Care. This feature will be
-    activated after obtaining proper medical database licensing and
-    regulatory approval (MCAZ - Medicines Control Authority of Zimbabwe).
-    """
+    """Create a new prescription. Requires: doctor, nurse, or admin."""
     if current_user.user_type not in CLINICAL_STAFF:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only healthcare providers can create prescriptions"
         )
-    # Provider must also have access to this patient
     require_patient_access(db, user=current_user, patient_id=prescription_data.patient_id)
-
-    prescription = PrescriptionService.create_prescription(db, prescription_data)
-    return prescription
+    return PrescriptionService.create_prescription(db, prescription_data)
 
 
 @router.put("/{prescription_id}/dispense", response_model=PrescriptionResponse)
@@ -84,13 +109,12 @@ async def mark_prescription_dispensed(
 ):
     """
     Mark a prescription as dispensed.
-
     Requires: pharmacist or admin role.
+    Records the dispensing event in the audit log.
     """
     if current_user.user_type not in DISPENSERS:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only pharmacists can dispense prescriptions"
         )
-    prescription = PrescriptionService.mark_as_dispensed(db, prescription_id)
-    return prescription
+    return PrescriptionService.mark_as_dispensed(db, prescription_id)

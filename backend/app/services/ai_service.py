@@ -8,19 +8,18 @@ import json
 from app.services.blockchain_service import BlockchainService
 from app.models.blockchain import BlockchainBlock
 
+
 class AIService:
-    
+
     @staticmethod
     def predict_disease(db: Session, prediction_data: AIPredictionCreate) -> AIPrediction:
-        """
-        Predict disease using rule-based AI
-        """
+        """Predict disease using rule-based AI"""
         predicted_condition, confidence = AIService._rule_based_prediction(
             symptoms=prediction_data.symptoms.lower(),
             vital_signs=prediction_data.vital_signs,
             location=prediction_data.patient_location
         )
-        
+
         new_prediction = AIPrediction(
             patient_id=prediction_data.patient_id,
             record_id=prediction_data.record_id,
@@ -29,12 +28,12 @@ class AIService:
             confidence_score=confidence,
             ai_model_version="rule-based-v1"
         )
-        
+
         db.add(new_prediction)
         db.commit()
         db.refresh(new_prediction)
 
-        # Add AI prediction to blockchain (best-effort)
+        # Add to blockchain (best-effort)
         try:
             last_block = db.query(BlockchainBlock).order_by(
                 BlockchainBlock.block_index.desc()
@@ -56,7 +55,6 @@ class AIService:
                 )
                 db.add(genesis_record)
                 db.commit()
-
                 previous_hash = genesis.hash
                 new_index = 1
 
@@ -80,25 +78,89 @@ class AIService:
             new_prediction.blockchain_hash = f"AIPRED-{secrets.token_hex(8)}"
             db.commit()
             db.refresh(new_prediction)
-        
+
         return new_prediction
-    
+
+    @staticmethod
+    def get_prediction_by_id(db: Session, prediction_id: int) -> AIPrediction:
+        """Get a single AI prediction by ID"""
+        prediction = db.query(AIPrediction).filter(
+            AIPrediction.prediction_id == prediction_id
+        ).first()
+        if not prediction:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Prediction not found"
+            )
+        return prediction
+
+    @staticmethod
+    def get_patient_predictions(db: Session, patient_id: int):
+        """Get all AI predictions for a patient"""
+        return db.query(AIPrediction).filter(
+            AIPrediction.patient_id == patient_id
+        ).order_by(AIPrediction.prediction_id.desc()).all()
+
+    @staticmethod
+    def patient_symptom_check(
+        symptoms: str,
+        patient_location: str = None,
+        vital_signs: dict = None
+    ) -> dict:
+        """
+        Advisory symptom check for patients.
+        Uses the same rule-based engine but returns guidance instead of a clinical diagnosis.
+        """
+        # Use the existing rule-based engine
+        predicted_condition, confidence = AIService._rule_based_prediction(
+            symptoms=symptoms.lower(),
+            vital_signs=vital_signs,
+            location=patient_location
+        )
+
+        # Map confidence to urgency level
+        if confidence >= 70:
+            urgency = "high"
+            recommendation = "Please visit a clinic or hospital as soon as possible."
+        elif confidence >= 50:
+            urgency = "moderate"
+            recommendation = "Consider visiting a clinic within the next 24–48 hours."
+        else:
+            urgency = "low"
+            recommendation = "Monitor your symptoms. If they worsen, visit a healthcare provider."
+
+        # Special case: emergency symptoms
+        emergency_keywords = ["chest pain", "difficulty breathing", "unconscious", "seizure", "severe bleeding"]
+        if any(kw in symptoms.lower() for kw in emergency_keywords):
+            urgency = "emergency"
+            recommendation = "Go to the nearest emergency room immediately or call emergency services."
+
+        return {
+            "possible_conditions": [predicted_condition],
+            "recommendation": recommendation,
+            "urgency_level": urgency,
+            "disclaimer": (
+                "This is not a medical diagnosis. "
+                "Always consult a qualified healthcare provider for proper diagnosis and treatment."
+            )
+        }
+
     @staticmethod
     def _rule_based_prediction(
         symptoms: str,
         vital_signs: Optional[dict] = None,
         location: Optional[str] = None
-    ) -> tuple[str, float]:
+    ) -> tuple:
         """Rule-based disease prediction"""
-        
+
         temperature = None
         if vital_signs and 'temperature' in vital_signs:
             temperature = vital_signs['temperature']
-        
+
         high_temp = temperature and temperature >= 38.0
         very_high_temp = temperature and temperature >= 39.0
-        
-        # MALARIA DETECTION
+
+        # MALARIA
         malaria_score = 0
         if high_temp or 'fever' in symptoms:
             malaria_score += 25
@@ -114,14 +176,12 @@ class AIService:
             malaria_score += 10
         if 'nausea' in symptoms or 'vomiting' in symptoms:
             malaria_score += 10
-        
         if location:
-            location_lower = location.lower()
             endemic_areas = ['kariba', 'zambezi', 'victoria falls', 'mutare']
-            if any(area in location_lower for area in endemic_areas):
+            if any(area in location.lower() for area in endemic_areas):
                 malaria_score += 20
-        
-        # TYPHOID DETECTION
+
+        # TYPHOID
         typhoid_score = 0
         if 'fever' in symptoms or high_temp:
             typhoid_score += 20
@@ -129,8 +189,8 @@ class AIService:
             typhoid_score += 25
         if 'diarrhea' in symptoms or 'diarrhoea' in symptoms:
             typhoid_score += 20
-        
-        # TUBERCULOSIS DETECTION
+
+        # TUBERCULOSIS
         tb_score = 0
         if 'cough' in symptoms:
             tb_score += 30
@@ -138,8 +198,8 @@ class AIService:
             tb_score += 25
         if 'weight loss' in symptoms:
             tb_score += 20
-        
-        # PNEUMONIA DETECTION
+
+        # PNEUMONIA
         pneumonia_score = 0
         if 'cough' in symptoms:
             pneumonia_score += 25
@@ -147,56 +207,21 @@ class AIService:
             pneumonia_score += 20
         if 'breathing' in symptoms:
             pneumonia_score += 30
-        
+
         scores = {
             'Malaria': malaria_score,
             'Typhoid Fever': typhoid_score,
             'Tuberculosis (TB)': tb_score,
             'Pneumonia': pneumonia_score
         }
-        
+
         diagnosis = max(scores, key=scores.get)
         confidence = scores[diagnosis]
-        
+
         if confidence < 30:
             diagnosis = "General Infection - Further Testing Required"
             confidence = 50.0
-        
+
         confidence = min(confidence, 95.0)
-        
+
         return diagnosis, confidence
-    
-@staticmethod
-def patient_symptom_check(
-    symptoms: str,
-    patient_location: str = None,
-    vital_signs: dict = None
-) -> dict:
-    """
-    Advisory symptom check for patients.
-    Uses the same AI engine but returns guidance instead of a clinical diagnosis.
-    """
-    # Build a prompt for the AI focused on guidance, not diagnosis
-    location_note = f" Patient is in {patient_location}." if patient_location else ""
-    vitals_note = f" Vitals: {vital_signs}." if vital_signs else ""
-
-    prompt = (
-        f"A patient reports the following symptoms: {symptoms}.{location_note}{vitals_note} "
-        "Provide: 1) A list of possible conditions (not a diagnosis), "
-        "2) A recommendation (e.g. visit clinic, go to emergency, rest at home), "
-        "3) An urgency level: low, moderate, high, or emergency. "
-        "Always advise consulting a qualified healthcare provider."
-    )
-
-    # Call your existing AI engine — adjust this to match how predict_disease works
-    ai_result = AIService._call_ai_model(prompt)  # replace with your actual AI call
-
-    return {
-        "possible_conditions": ai_result.get("conditions", []),
-        "recommendation": ai_result.get("recommendation", "Please consult a healthcare provider."),
-        "urgency_level": ai_result.get("urgency", "moderate"),
-        "disclaimer": (
-            "This is not a medical diagnosis. "
-            "Always consult a qualified healthcare provider for proper diagnosis and treatment."
-        )
-    }

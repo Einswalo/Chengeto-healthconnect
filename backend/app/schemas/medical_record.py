@@ -1,8 +1,24 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from datetime import date, datetime
 
-# Medical Record Creation
+
+class VitalSignInRecord(BaseModel):
+    """Vitals embedded inside a medical record response"""
+    vital_id: int
+    temperature: Optional[float]
+    blood_pressure_systolic: Optional[int]
+    blood_pressure_diastolic: Optional[int]
+    heart_rate: Optional[int]
+    respiratory_rate: Optional[int]
+    weight: Optional[float]
+    height: Optional[float]
+    recorded_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class MedicalRecordCreate(BaseModel):
     patient_id: int
     provider_id: Optional[int] = None
@@ -15,13 +31,13 @@ class MedicalRecordCreate(BaseModel):
 
 
 class MedicalRecordUpdate(BaseModel):
-    visit_date: Optional[str] = None  # Format: "YYYY-MM-DD"
+    visit_date: Optional[str] = None
     diagnosis: Optional[str] = None
     symptoms: Optional[str] = None
     treatment_plan: Optional[str] = None
     notes: Optional[str] = None
 
-# Medical Record Response
+
 class MedicalRecordResponse(BaseModel):
     record_id: int
     patient_id: int
@@ -33,6 +49,8 @@ class MedicalRecordResponse(BaseModel):
     treatment_plan: Optional[str]
     notes: Optional[str]
     created_at: datetime
-    
+    # ✅ Vitals embedded in the record response
+    vital_signs: List[VitalSignInRecord] = []
+
     class Config:
         from_attributes = True

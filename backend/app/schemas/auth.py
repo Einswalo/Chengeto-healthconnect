@@ -8,6 +8,7 @@ class UserRegister(BaseModel):
     password: str
     user_type: str
     
+    # app/schemas/auth.py - Update validate_user_type method
     @validator('user_type')
     def validate_user_type(cls, v):
         allowed_types = ['patient', 'doctor', 'nurse', 'admin', 'pharmacist', 'receptionist']

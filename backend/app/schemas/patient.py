@@ -22,14 +22,27 @@ class PatientCreate(BaseModel):
 class PatientResponse(BaseModel):
     patient_id: int
     user_id: int
+
     first_name: str
     last_name: str
+
+    national_id: Optional[str] = None
+
     date_of_birth: date
-    gender: Optional[str]
-    phone_number: Optional[str]
-    city: Optional[str]
+    gender: Optional[str] = None
+
+    phone_number: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+
+    emergency_contact_name: Optional[str] = None
+    emergency_contact_phone: Optional[str] = None
+
+    blood_type: Optional[str] = None
+    allergies: Optional[str] = None
+    chronic_conditions: Optional[str] = None
+
     created_at: datetime
-    
+
     class Config:
         from_attributes = True
-        
